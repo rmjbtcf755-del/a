@@ -51,6 +51,7 @@ export async function startGame() {
   await loadClassic(scriptUrl("../account/auth.js"));
   await loadClassic(scriptUrl("../social/friends.js"));
   await loadClassic(scriptUrl("../social/admin.js"));
+  await loadClassic(scriptUrl("../game/deathReplay.js"));
   await loadClassic(scriptUrl("../game/engine.js"));
 
   if (typeof window.__agarStartEngine !== "function") {
