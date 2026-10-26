@@ -2504,6 +2504,7 @@
         clearInterval(S.wsPingInterval);
         S.wsPingInterval = null;
       }
+      clearJoinChatTimer();
       hideBanBanner();
       hideReconnectPanel();
       showConnectVerifyOverlay("Подключение к серверу…");
@@ -2576,6 +2577,12 @@
         S.ws.send(buf);
       } catch (e) {}
     }
+    function clearJoinChatTimer() {
+      if (S.joinChatTimer) {
+        clearTimeout(S.joinChatTimer);
+        S.joinChatTimer = null;
+      }
+    }
     function onWsOpen() {
       var _a;
       setConnectVerifyText("Синхронизация с сервером…");
@@ -2610,10 +2617,18 @@
         S.pingstamp = Date.now();
         wsSend(encodePing());
       }, 3e3);
-      (_b = hooks.sendChat) == null ? void 0 : _b.call(hooks, "вoшёл в игру!");
+      clearJoinChatTimer();
+      const joinAttemptId = S.connectAttemptId;
+      S.joinChatTimer = setTimeout(() => {
+        S.joinChatTimer = null;
+        if (joinAttemptId !== S.connectAttemptId) return;
+        if (!S.gameHandshakeDone || !S.ws || S.ws.readyState !== WebSocket.OPEN) return;
+        (_b = hooks.sendChat) == null ? void 0 : _b.call(hooks, "вoшёл в игру!");
+      }, 2000);
     }
     function onWsClose() {
       S.gameHandshakeDone = false;
+      clearJoinChatTimer();
       if (S.wsPingInterval) {
         clearInterval(S.wsPingInterval);
         S.wsPingInterval = null;
@@ -3682,6 +3697,10 @@
           showBanBanner(banRemaining, banReason);
           S.connectInProgress = false;
           S.gameHandshakeDone = false;
+          if (S.joinChatTimer) {
+            clearTimeout(S.joinChatTimer);
+            S.joinChatTimer = null;
+          }
           if (S.wsPingInterval) {
             clearInterval(S.wsPingInterval);
             S.wsPingInterval = null;
@@ -3907,6 +3926,7 @@
       ping: 0,
       pingstamp: 0,
       wsPingInterval: null,
+      joinChatTimer: null,
       gameHandshakeDone: false,
       nodeX: 0,
       nodeY: 0,
@@ -6173,6 +6193,7 @@
 
   var OFFICIAL_SERVERS = [
     { id: "ffa", host: "ffa.agar.su", wins: false },
+    { id: "exp", host: "ffa.agar.su:6001", wins: false },
     { id: "ms", host: "ms.agar.su:6001", wins: false },
     { id: "pvp1", host: "ms.agar.su:6004", wins: true },
     { id: "pvp2", host: "ms.agar.su:6005", wins: true },
