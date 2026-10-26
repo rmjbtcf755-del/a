@@ -1,4 +1,3 @@
-/* Сессия: мир, Canvas 2D, сокет. Вектор, шина, опкоды и Reader приходят с window до старта. */
 (() => {
   var log = {
     info(str) {
@@ -191,26 +190,15 @@
         if (server.host === host) return region;
       }
     }
-    // Fallback by port/path when list miss
-    if (/:6013\b|sixz\.ru:6013/i.test(host)) return "tr";
-    // hardcore (6017) + darctida live under RU list in HTML
-    if (/sixz\.ru:6017|:6017\b|\/hc\b|\/darctida\b/i.test(host)) return "ru";
-    if (/:6014\b|:6015\b|xn--bdk\.pw|\/d(?:ffa|rookery)/i.test(host)) return "eu";
     return null;
   }
   function isForeignStyleHost(host) {
-    if (!isOfficialAgarHost(host)) return true;
-    return /:6014\b|:6015\b|:6017\b|xn--bdk\.pw|sixz\.ru:6017|\/darctida\b|\/hc\b/i.test(String(host || ""));
+    return !isOfficialAgarHost(host);
   }
-  /**
-   * EN(EU) + TR servers: mass as 1.2k / 1,2k.
-   * Quantized so the label does not rebuild every tick (less GPU/text load).
-   * hardcore/darctida stay on RU tab but keep foreign mass style by host.
-   */
+
   function formatMassLabel(mass, regionKey, host) {
     const h = String(host || "");
-    const fullMass = /sixz\.ru:6017|:6017\b/i.test(h);
-    const useK = !fullMass && (regionKey === "tr" || regionKey === "eu" || regionKey === "en" || isForeignStyleHost(h));
+    const useK = regionKey === "tr" || regionKey === "eu" || regionKey === "en" || isForeignStyleHost(h);
     let m = mass | 0;
     if (!useK) return String(m);
     if (m >= 1000) {
@@ -222,7 +210,7 @@
     m = Math.round(m / 10) * 10;
     return String(m);
   }
-  /** TR / EU(EN): lighter Arial labels, no black outline (incl. hardcore/darctida by host) */
+
   function isLightLabelRegion(regionKey, host) {
     return regionKey === "tr" || regionKey === "eu" || regionKey === "en" || isForeignStyleHost(host);
   }
@@ -230,7 +218,7 @@
     const entry = findGameServer(hostOrUrl);
     let host = entry ? entry.host : hostOrUrl || "ffa.agar.su";
     host = String(host || "").replace(/^wss?:\/\//i, "");
-    // strip room path: xn--bdk.pw:6014/dparty → xn--bdk.pw:6014
+
     const slash = host.indexOf("/");
     if (slash > 0) host = host.slice(0, slash);
     if (/^https?:\/\//i.test(host)) return String(host).replace(/\/$/, "");
@@ -240,7 +228,7 @@
     const h = host || "ffa.agar.su";
     return "wss://" + String(h).replace(/^wss?:\/\//i, "");
   }
-  /** Only *.agar.su may receive accountToken / connectToken / #pass. */
+
   function isOfficialAgarHost(hostOrUrl) {
     const raw = String(hostOrUrl || "").trim();
     if (!raw) return false;
@@ -320,7 +308,7 @@
     if (!n || n.trim() !== n) return "";
     return n.toLowerCase();
   }
-  var ONLINE_HUB_URL = "https://api.agar.su/online";//2
+  var ONLINE_HUB_URL = "https://api.agar.su/online";
   var TOP100_URL = "https://api.agar.su/api/top100";
   var SKINLIST_URL = "https://api.agar.su/skinlist.txt";
   var STICKERLIST_URL = "https://api.agar.su/stickerlist.txt";
@@ -339,7 +327,7 @@
     statsbglist: "https://api.agar.su/statsbglist.txt",
     word: "word.txt"
   };
-  /** Purchased skins / passes — never cache in browser or nginx. */
+
   var NO_CACHE_URLS = new Set([ STATIC_URLS.skinlist, STATIC_URLS.stickerlist, STATIC_URLS.pass, STATIC_URLS.bannick, STATIC_URLS.invisible, STATIC_URLS.rotation, STATIC_URLS.statsbglist ]);
   var cache = new Map;
   var inflight = new Map;
@@ -577,7 +565,6 @@
     };
   }
   var skinImageCache = new Map;
-  var skinPetriFailAt = new Map;
   function getSkinImageUrl(skinId, fallbackId = "4") {
     const id = skinId && String(skinId).trim() || fallbackId;
     return `${SKIN_CDN}/${id}.png`;
@@ -599,7 +586,7 @@
   function skinImageCacheKey(url) {
     return resolveAssetUrl(String(url || "").replace(/([?&])_=\d+/g, "").replace(/\?$/, ""));
   }
-  /** One network fetch per URL; DOM imgs reuse the same cached Image.src */
+
   function loadCachedImage(url, bustRetry) {
     const baseKey = skinImageCacheKey(url);
     const fetchUrl = bustRetry
@@ -610,13 +597,7 @@
     if (entry instanceof Image) return entry;
     if (entry === "error") {
       if (baseKey === skinImageCacheKey(SKIN_FALLBACK_URL)) return null;
-      if (/\/api\/getSkin\?/i.test(baseKey)) {
-        const failAt = skinPetriFailAt.get(baseKey) || 0;
-        if (Date.now() - failAt < 5000) return null;
-        skinImageCache.delete(baseKey);
-      } else {
-        return loadCachedImage(SKIN_FALLBACK_URL);
-      }
+      return loadCachedImage(SKIN_FALLBACK_URL);
     }
     const img = new Image;
     img.decoding = "async";
@@ -630,10 +611,6 @@
         return;
       }
       skinImageCache.set(baseKey, "error");
-      if (/\/api\/getSkin\?/i.test(baseKey)) {
-        skinPetriFailAt.set(baseKey, Date.now());
-        return;
-      }
       if (baseKey !== skinImageCacheKey(SKIN_FALLBACK_URL)) loadCachedImage(SKIN_FALLBACK_URL);
     };
     img.src = resolved;
@@ -706,7 +683,7 @@
   function isAnimatedSkinImage(img) {
     return !!(img && getSkinStripInfo(img).isStrip);
   }
-  /** Static skins: mass <= 50 → 128px, else 512px. */
+
   function pickSkinLodByMass(mass) {
     return (mass | 0) <= 50 ? 128 : 512;
   }
@@ -775,8 +752,7 @@
     delete el.dataset.skinStrip;
   }
   function applyBackgroundStrip(el, frames, frame) {
-    // Never write width/height here — clientWidth shrinks under border-box and
-    // would collapse #skinss / avatars every tick (strip skins like amfitamin).
+
     if (el.style.width || el.style.height || el.style.minWidth || el.style.minHeight) {
       el.style.width = "";
       el.style.height = "";
@@ -871,7 +847,7 @@
   function updateDomSkinStrip(el, now) {
     if (el.dataset && el.dataset.skinStripStatic === "1") return;
     if (el.closest && el.closest("#leaderboard, #toplistnow")) return;
-    // Skip hidden menu tabs / death screen — no work, no layout thrash
+
     if (el.closest) {
       var hiddenPanel = el.closest(".content:not(.active), #statics");
       if (hiddenPanel) {
@@ -906,10 +882,6 @@
     domStripRaf = requestAnimationFrame(loop);
   }
 
-  /**
-   * Chat / UI avatars: never start a new download per message.
-   * Warm skinImageCache first, then point the DOM img at the same src.
-   */
   function setSkinAvatarFromUrl(img, url) {
     if (!img || !url) return;
     const resolved = resolveAssetUrl(url);
@@ -951,7 +923,7 @@
   function setSkinAvatarById(img, skinId) {
     setSkinAvatarFromUrl(img, getSkinImageUrl(skinId));
   }
-  /** Leaderboard/small UI: one strip frame, no animation loop. */
+
   function setSkinAvatarStatic(img, url) {
     if (!img || !url) return;
     img.dataset.skinStripStatic = "1";
@@ -976,72 +948,40 @@
   function getSkinImage(skinId) {
     return loadCachedImage(getSkinImageUrl(skinId));
   }
-  /**
-   * Limited-glow mass thresholds by server (Russia only).
-   * Turkey / Europe servers: disabled.
-   * Default RU (ffa / ms / pvp / tournament): 22400 / 22300
-   * hardcore (/hc): 35000 / 34900
-   */
+
   function isLimitGlowDisabledHost(host) {
-    const h = String(host || "");
-    if (!isOfficialAgarHost(h)) return true;
-    if (/:6013\b|sixz\.ru:6013/i.test(h)) return true;
-    if (/:6014\b|:6015\b|:6017\b|xn--bdk\.pw|\/d(?:ffa|rookery|arctida)/i.test(h)) return true;
-    return false;
+    return !isOfficialAgarHost(host);
   }
   function getLimitGlowMassBounds(host) {
     const h = String(host || "");
-    if (/\/hc\b/i.test(h)) return { on: 35000, off: 34900 };
     if (isLimitGlowDisabledHost(host)) return null;
     if (/megasplit5k|\/ms5k/i.test(h)) return { on: 32400, off: 32300 };
     return { on: 22400, off: 22300 };
   }
   window.getLimitGlowMassBounds = getLimitGlowMassBounds;
   window.isLimitGlowDisabledHost = isLimitGlowDisabledHost;
-  /** Team rings (photo/team1.png … team4.png) only on tournament 3x3 and 4x4. */
+
   function isTeamSideOutlineServer(host) {
     const id = resolveOfficialServerId(host);
     return id === "tournament2" || id === "tournament3";
   }
-  /** Bridge skins via unified xn--bdk.pw skinsbot. skinlist.txt still wins (agar.su only). */
-  var SKINS_BOT_BASE = "https://xn--bdk.pw:6016";
   function applyServerSpectateCamera(S, x, y, size) {
-    // Playing own cells — never let server spectate camera override
+
     if (S.playerCells && S.playerCells.length > 0) return;
     const sizeOk = typeof size === "number" && size > 0;
     S.posX = x;
     S.posY = y;
     if (sizeOk) S.posSize = size;
   }
-  /** AgarZ skin bridge (sixz.ru:6013). */
-  function isPetriSkinHost(host) {
-    return /sixz\.ru:6013|:6013\//i.test(String(host || ""));
-  }
-  function getSkinBridge(host) {
-    if (/sixz\.ru:6013|:6013\b/i.test(String(host || ""))) return "agarz";
-    return null;
-  }
-  function getPetriSkinUrl(nick, host) {
-    const bridge = getSkinBridge(host);
-    if (!bridge) return null;
-    const bare = String(nick || "").split("#")[0].replace(/<[^>]*>/g, "").trim();
-    if (!bare) return null;
-    return SKINS_BOT_BASE + "/api/getSkin?bridge=" + bridge + "&username=" + encodeURIComponent(bare);
-  }
-  function getCellSkinImage(S, nick, skinId, getSkinImageFn, loadCachedImageFn) {
-    if (skinId) return (getSkinImageFn || getSkinImage)(skinId);
-    const host = S && (S.CONNECTION_URL || S.currentWebSocketUrl || S.wsUrl);
-    if (!isPetriSkinHost(host)) return null;
-    const url = getPetriSkinUrl(nick, host);
-    return url ? (loadCachedImageFn || loadCachedImage)(url) : null;
+
+  function getCellSkinImage(S, nick, skinId, getSkinImageFn) {
+    if (!skinId) return null;
+    return (getSkinImageFn || getSkinImage)(skinId);
   }
   function isSkinImageReady(img) {
     return !!(img && img.complete && (img.naturalWidth || img.width) > 0);
   }
-  /**
-   * Skin for transparent-body nicks: only the real skin file, never silent fallback.
-   * Missing / still loading / failed → null (caller must keep cell color visible).
-   */
+
   function getOwnedSkinDrawable(skinId) {
     if (!skinId) return null;
     const baseKey = skinImageCacheKey(getSkinImageUrl(skinId));
@@ -1696,7 +1636,7 @@
     drawCustomMapBackground(ctx);
     let drawn = 0;
     for (let i = 0; i < S.Cells.length; i++) S.Cells[i].drawOneCell(ctx);
-    // Food is a few canvas fills on this context. One fill per palette color.
+
     S.foodBatchDraw = true;
     drawn += drawBatchedFood(ctx, S);
     for (let i = 0; i < S.nodelist.length; i++) {
@@ -1716,11 +1656,7 @@
     }
     drawTouch(ctx);
   }
-  // ── FOOD BATCH helper (see drawGameScene foodBatchDraw block) ────────────
-  // Pre-batch: food went through Cell.drawOneCell like players (per-pellet fill).
-  // Bugs (invisible food, wrong colors, food above players): turn off batch in
-  // drawGameScene or remove early-return in drawOneCell for isFood.
-  /** Same canvas fill as gray food. Eight colors, so eight fills, no second canvas. */
+
   function drawBatchedFood(ctx, S) {
     const list = S.nodelist;
     if (!list || !list.length) return 0;
@@ -1843,7 +1779,6 @@
   function drawCenterBackground() {
     const S = deps.S;
     if (!(S == null ? void 0 : S.ctx)) return;
-    // Неофициальный сервер: без center.png / рекорда в центре карты
     if (document.body.classList.contains("no-official-stats")) return;
     if (!isBackgroundLoaded) return;
     const mapCenterX = (S.leftPos + S.rightPos) / 2;
@@ -2354,7 +2289,7 @@
     (_a = ui.setText) == null ? void 0 : _a.call(ui, serverPowSupportCache.get(apiBase) === true ? "Запрос проверки…" : "Проверка сервера…");
     let res;
     try {
-      // Short timeout: servers without /challenge (ms/pvp) or blocked ports must not hang connect
+
       res = await fetch(apiBase + "/challenge", {
         cache: "no-store",
         signal: AbortSignal.timeout(3500)
@@ -2399,9 +2334,7 @@
     ws.onmessage = null;
     ws.onclose = null;
     ws.onerror = function() {};
-    // close() during CONNECTING is logged as
-    // "WebSocket is closed before the connection is established".
-    // Drop handlers now and close only after the handshake finishes.
+
     if (ws.readyState === WebSocket.CONNECTING) {
       ws.onopen = function() {
         ws.onopen = null;
@@ -2566,7 +2499,7 @@
       const attemptId = S.connectAttemptId;
       S.connectInProgress = true;
       S.gameHandshakeDone = false;
-      // safeCloseSocket clears onclose, so onWsClose will not stop this timer.
+
       if (S.wsPingInterval) {
         clearInterval(S.wsPingInterval);
         S.wsPingInterval = null;
@@ -2657,12 +2590,12 @@
       if (S.gameHandshakeDone) return;
       S.gameHandshakeDone = true;
       clearSpectReconnectTimer();
-      // New socket: never keep previous server's follow target / auto-click timer
+
       clearSpectateFollow(S);
       hideConnectVerifyOverlay();
       hideReconnectPanel();
       (_a = hooks.sendNickName) == null ? void 0 : _a.call(hooks);
-      // Button «Наблюдать» sets userNickName=null — must enter spectate (not only ?spect URL).
+
       if (S.userNickName == null) {
         if (typeof hooks.sendSpectate === "function") hooks.sendSpectate();
         else {
@@ -2728,7 +2661,7 @@
     Object.assign(S.api, api);
     return api;
   }
-  /** Pause (F toggle): mouse locked to main cell center. No flip/mirror. */
+
   function setFreezeUi(visible) {
     try {
       const el = document.querySelector("#freeze");
@@ -2740,7 +2673,7 @@
     S._aimFlipForced = null;
     S._aimFlipLoopToken = (S._aimFlipLoopToken || 0) + 1;
     if (!S.ws) return;
-    // Drop old AimFlip wrappers only; do not touch active freeze hook
+
     if (S.ws.__freezeHooked) {
       S.ws.__aimFlipHooked = false;
       S.ws.__aimFlipRawSend = null;
@@ -2879,11 +2812,11 @@
     function sendMouseMove(opts) {
       if (!wsIsOpen()) return;
       ensureFreezeWsHook(S);
-      // Until borders arrive, never aim — old default (5000,5000) clamped to map corner (D4/E5)
+
       if (!S.mapBoundsReady) return;
       const spectating = !S.playerCells.length;
       const force = opts && opts.force;
-      // Pause: lock mouse to main cell center (0,0 of primary cell)
+
       if (S.freeze && !spectating) {
         const aim = updateFreezeAim(S);
         if (aim && (force || !(Math.abs(S.oldX - aim.x) < .05 && Math.abs(S.oldY - aim.y) < .05))) {
@@ -2893,7 +2826,7 @@
         }
         return;
       }
-      // Spectate: overview follows camera aim (posX) — keep server view at map center until user aims
+
       if (spectating) {
         if (force || !(Math.abs(S.oldX - S.posX) < .05 && Math.abs(S.oldY - S.posY) < .05)) {
           S.oldX = S.posX;
@@ -2940,7 +2873,7 @@
     function isIncompletePrivateChat(str) {
       const s = String(str || "").trim();
       if (!s || !/^!ls/i.test(s)) return false;
-      // Valid PM: !ls<id> <non-empty message>. Bare !ls1223 must not go to public chat.
+
       return !/^!ls\d+\s+\S/i.test(s);
     }
     function sendChat(str) {
@@ -2955,7 +2888,7 @@
           S.lastChatSent = str;
           S.lastChatRepeat = 1;
         }
-        // Spam: only from the 4th identical message in a row. Banned words: always shadow.
+
         if (banned || S.lastChatRepeat >= 4) {
           echoShadowChat(S, str);
           return;
@@ -3015,7 +2948,7 @@
     return api;
   }
   var normalizeFractlPart = n => n % (Math.PI * 2) / (Math.PI * 2);
-  /** Food placeholder positions from node id — must use map width/height, not rightPos alone. */
+
   function computeFoodPosition(S, nodeid) {
     const w = (S.rightPos - S.leftPos) || 1;
     const h = (S.bottomPos - S.topPos) || 1;
@@ -3028,10 +2961,10 @@
   function foodColorHex(id) {
     return FOOD_PALETTE[(Math.imul(id | 0, 747796405) >>> 0) % FOOD_PALETTE.length];
   }
-  // Player ids stop at 2147483647. Virus wire ids are stored above that.
+
   var VIRUS_NODE_BASE = 2147483648;
   var EJECT_SIZE = 35;
-  /** Fed virus color. Matches the sizes produced by mass 100 + 12 per feed. */
+
   function virusColorHex(size) {
     const s = size | 0;
     if (s >= 131) return "#ff3200";
@@ -3042,7 +2975,7 @@
     if (s >= 105) return "#80ff00";
     return "#00ff00";
   }
-  /** Food mass is fixed (config.foodMass). The server does not send size. */
+
   function computeFoodSize(S) {
     let mass = S.foodMass | 0;
     if (!(mass > 0)) {
@@ -3109,11 +3042,7 @@
     if (key && S.activeStickersByName[key]) return S.activeStickersByName[key];
     return null;
   }
-  /**
-   * UpdateNodes хвост: FF+id = стикер вкл, 00 = выкл.
-   * Свои клетки — только пока зажата клавиша (анти-мерцание/залипание у себя).
-   * Чужие: 00 обязательно гасит (иначе 2-я вкладка видит стикер после отпускания).
-   */
+
   function syncNodeStickerFromUpdate(S, node, name, stickerFromUpdate) {
     if (!node) return;
     const n = name || node.name || "";
@@ -3138,7 +3067,7 @@
     const remembered = resolveRememberedSticker(S, node.id, n);
     if (remembered) setNodeSticker(node, remembered);
   }
-  /** Пакет STICKER — явное вкл/выкл. Для своих ignore «on», если клавиша уже отпущена (анти-залипание). */
+
   function applyStickerPacket(S, stickerPlayerId, stickerId, enabled) {
     ensureStickerState(S);
     let refName = null;
@@ -3376,7 +3305,7 @@
       let size = 0;
       let playerId = 0;
       if (type === 1) {
-        // Legacy packet. Current server sends food as a uint16 id list after the nodes.
+
         const foodPos = computeFoodPosition(S, nodeid);
         posX = foodPos.x;
         posY = foodPos.y;
@@ -3396,9 +3325,7 @@
       const flagEjected = !!(spiked & 32) || !!(spiked & 64);
       const flagAgitated = !!(spiked & 16);
       const packetName = reader.utf8();
-      // Хвост протокола: FF+id (стикер есть) или 00 (в этом апдекте нет).
-      // Источник истины — пакет STICKER + карта activeStickers*: байт 00 НЕ сбрасывает
-      // активный стикер (иначе у всех мерцает главная клетка на каждом тике).
+
       let stickerFromUpdate = null;
       if (reader.canRead) {
         const marker = reader.uint8();
@@ -3442,7 +3369,7 @@
       node.isVirus = flagVirus;
       node.isEjected = flagEjected;
       node.isAgitated = flagAgitated;
-      if (type === 1 || type === 4) node.isFood = true; // type4 = AgarZ food w/ coords
+      if (type === 1 || type === 4) node.isFood = true;
       node.nx = posX;
       node.ny = posY;
       node.setSize(size);
@@ -3721,7 +3648,7 @@
     S.leaderBoard = [];
     S.lbRank = 0;
     S.mapBoundsReady = false;
-    // Free camera — do not keep previous follow target / map position across hops
+
     if (typeof S.leftPos === "number" && typeof S.rightPos === "number") {
       S.posX = (S.leftPos + S.rightPos) / 2;
       S.posY = (S.topPos + S.bottomPos) / 2;
@@ -3780,7 +3707,7 @@
         }
 
        case ServerOpcode.UPDATE_CAMERA:
-        // Agar.su: full packet float32 x/y/size, or bare opcode → default spectate zoom.
+
         if (msg.byteLength >= offset + 12) {
           const cx = msg.getFloat32(offset, true);
           offset += 4;
@@ -3795,7 +3722,7 @@
         break;
 
        case ServerOpcode.CLEAR_NODES:
-        // CLEAR alone wiped playerCells without S.ua → death screen skipped (AgarZ)
+
         if (S.playerCells.length > 0) {
           S.ua = true;
           disablePause(S);
@@ -3901,7 +3828,7 @@
             S.oldY = S.posY - 999;
           }
           (_g = hooks.onGameHandshakeReady) == null ? void 0 : _g.call(hooks);
-          // Sync server overview to map center (C3) — avoids D4 lock from pre-border mouse (5000,5000)
+
           if (S.playerCells.length === 0 && typeof hooks.sendMouseMove === "function") {
             try {
               hooks.sendMouseMove({ force: true });
@@ -4175,9 +4102,6 @@
   }
   function getClientCellColor(cell) {
     const S = deps3.S;
-    if (cell.isVirus && /sixz\.ru:6017|:6017\b/i.test(String(S.CONNECTION_URL || S.currentWebSocketUrl || S.wsUrl || ""))) {
-      return "#ff9900";
-    }
     if (!S.customClientColors) return null;
     if (cell.isVirus) return S.clientColorVirus;
     if (cell.isFood) return S.clientColorFood;
@@ -4206,8 +4130,7 @@
     this._stroke = !!ustroke;
     ustrokecolor && (this._strokeColor = ustrokecolor);
   }
-  /** Stable font px for UText; visual size follows cell via drawImage scale (no re-raster every frame).
-   * LOD is chosen by on-screen px (world label size × viewZoom): zoom in / big ball → sharp. */
+
   var LABEL_RASTER_LODS = [16, 24, 32, 48, 64, 96, 128, 192, 256];
   function pickLabelRasterLod(targetPx, prevLod) {
     const t = Math.max(1, Number(targetPx) || 1);
@@ -4231,7 +4154,7 @@
     }
     return closest;
   }
-  /** Screen-pixel budget for a label (what you actually see). */
+
   function labelScreenPx(worldSize, viewZoom) {
     return Math.max(1, (Number(worldSize) || 1) * (Number(viewZoom) || 1));
   }
@@ -4387,7 +4310,7 @@
       } else {
         this.fixedName = null;
       }
-      // Same nick → keep skin/text caches (split/merge spam used to rebuild every tick).
+
       if (name === this.name && this.nameCache && this._txtNameVal === name) return;
       this.name = name;
       this._skinNameKey = null;
@@ -4396,8 +4319,7 @@
       this._txtNameVal = void 0;
       this._txtMassVal = -1;
       this._txtNameStroke = null;
-      // Raster size is LOD-stable; per-frame visual size is drawImage scale.
-      // Initial LOD from screen px so first paint matches zoom.
+
       const viewZ = (deps3.S && deps3.S.viewZoom) || 1;
       const raster = this._txtRasterSize || pickLabelRasterLod(labelScreenPx(this.getNameSize(), viewZ), 0);
       this._txtRasterSize = raster;
@@ -4411,7 +4333,7 @@
     },
     setSize(size) {
       this.nSize = size;
-      // Mass label font size is no longer rebuilt here — scaled in drawOneCell.
+
     },
     getNumPoints() {
       return 0;
@@ -4464,8 +4386,7 @@
       var _a, _b;
       if (!this.shouldRender()) return;
       const S = deps3.S;
-      // FOOD BATCH: when foodBatchDraw is set, food is painted in drawBatchedFood —
-      // skip here. If batch disabled/reverted, delete this guard.
+
       if (this.isFood && S.foodBatchDraw) return;
       const getSkinImage2 = deps3.getSkinImage || getSkinImage;
       const getOwnedSkinDrawable2 = deps3.getOwnedSkinDrawable || getOwnedSkinDrawable;
@@ -4494,7 +4415,7 @@
       const skinId = skinList[skinName] || null;
       if (this._skinId !== skinId) this._skinId = skinId;
       const wantTransp = !!(S.showSkin && !this.isVirus && transparent.has(this.name));
-      // Transparent body only when the real skin is loaded — never leave an invisible ghost.
+
       const ownedSkinImg = wantTransp && skinId ? getOwnedSkinDrawable2(skinId) : null;
       const isTransp = !!(wantTransp && ownedSkinImg);
       const cellColor = this.getEffectiveColor();
@@ -4620,13 +4541,13 @@
         const viewZ = S.viewZoom || 1;
         const screenSize = this.size * viewZ;
         const showMassLabels = screenSize > 28;
-        // Cell labels: scale=1 always; sharpness from screen-space LOD (size × zoom).
+
         if (this.nameCache && this.nameCache._scale !== 1) this.nameCache.setScale(1);
         if (this.sizeCache && this.sizeCache._scale !== 1) this.sizeCache.setScale(1);
         const nameMinSize = 10;
         if (S.showName && this.name && this.nameCache && this.size > nameMinSize) {
           let displayName = this.name;
-          if (!isPetriSkinHost(S.CONNECTION_URL || S.currentWebSocketUrl || S.wsUrl) && invisible.has(this._nameLower)) {
+          if (invisible.has(this._nameLower)) {
             displayName = "";
           }
           if (displayName) {
@@ -4654,8 +4575,7 @@
               this.nameCache.setFont(labelFont);
             }
             const img = this.nameCache.render();
-            // World draw size tracks cell; ctx.scale(viewZoom) → screen ≈ targetSize×zoom.
-            // Bitmap px ≈ LOD(screen) so zoom-in / big ball stays sharp.
+
             const scaleToTarget = targetSize / (this._txtRasterSize || rasterSize);
             let drawWidth = img.width * scaleToTarget;
             let drawHeight = img.height * scaleToTarget;
@@ -5026,7 +4946,7 @@
       S.posX = Math.max(S.leftPos, Math.min(S.rightPos, S.X));
       S.posY = Math.max(S.topPos, Math.min(S.bottomPos, S.Y));
     };
-    /** Overview moves on spectate-click (op 1), not mouse alone — auto-click while following. */
+
     function sendSpectateAimClick() {
       if (S.playerCells.length) return;
       S.oldX = S.posX - 999;
@@ -5083,7 +5003,7 @@
         S.spectateFollowNick = null;
         S.spectateFollowPid = 0;
         stopSpectateFollowAutoClick();
-        // Авто-наблюдение выкл.: клик везде — точка под курсором (не центр клетки)
+
         updateMouseAim();
         sendSpectateAimClick();
       }
@@ -5154,7 +5074,7 @@
       });
       return next;
     }
-    /** Применить реальное состояние зажатых клавиш (show/hide/switch). */
+
     function applyHeldStickerState() {
       const next = pickHeldSticker();
       if (next == null) {
@@ -5177,7 +5097,7 @@
     function armStickerGate() {
       stickerGateUntil = Date.now() + STICKER_ACTION_DELAY;
     }
-    /** 500ms между действиями; клавиши трекаем сразу, применение — сразу или по таймеру. */
+
     function requestStickerSync() {
       const wait = stickerGateUntil - Date.now();
       if (wait <= 0) {
@@ -5194,7 +5114,7 @@
         stickerSyncTimer = null;
         applyHeldStickerState();
         armStickerGate();
-        // если за ожидание снова жали/отпускали — догнать актуальное состояние
+
         if (pickHeldSticker() !== currentSticker || pickHeldSticker() == null && currentSticker !== null) {
           requestStickerSync();
         }
@@ -5233,7 +5153,7 @@
           let combinedText = "";
           if (lsText && chatText) combinedText = lsText + " " + chatText; else if (lsText) combinedText = lsText; else if (chatText) combinedText = chatText;
           if (combinedText && /^!ls/i.test(combinedText) && !/^!ls\d+\s+\S/i.test(combinedText)) {
-            // Incomplete PM (!ls1223 without message) — do not send, keep chat open
+
             isTyping = true;
             if (chatInput) chatInput.focus();
             return;
@@ -5257,7 +5177,7 @@
       }
       if (isTyping) return;
       if (code === getBind(S, "freeze")) {
-        // Toggle pause: mouse → main cell center + #freeze UI
+
         if (!keyPressed.freeze && S.playerCells.length > 0) {
           keyPressed.freeze = true;
           togglePause(S, hooks);
@@ -5549,7 +5469,7 @@
     function onTouchMove(e) {
       e.preventDefault();
       const gameTouches = collectGameTouches(e.touches);
-      // Pinch только если 2 пальца на карте/джойстике — не считая кнопок split/eject
+
       if (gameTouches.length === 2) {
         const dx = gameTouches[0].clientX - gameTouches[1].clientX;
         const dy = gameTouches[0].clientY - gameTouches[1].clientY;
@@ -5720,13 +5640,11 @@
   var STATS_PROFILE_BASE = "https://agar.su/stats/users/?id=";
   var STATS_CLAN_PROFILE_BASE = "https://agar.su/stats/clans/?id=";
   var STATS_RECORDS_FEED = STATS_API + "/api/records/feed";
-  // feed раньше поллился каждые 10с на главной — лишний трафик; рекорды смотреть на /stats
+
   var STATS_FEED_ENABLED = true;
   var STATS_FEED_POLL_MS = 10000;
   var STATS_FEED_STORAGE_KEY = "agar_stats_feed_since";
 
-  // ── In-game monit widget (like /stats/monit, current server only) ─────────
-  // Chart = #1 mass/wins over time (up/down). List = places now. Click → /stats/users.
   var monitWidgetState = { hoursMode: "today", hours: 24, loading: false, srv: null, hitPts: [] };
 
   function monitEscapeHtml(s) {
@@ -5778,7 +5696,6 @@
     };
   }
 
-  /** Hours since 00:00 Europe/Moscow (for "Сегодня" window). */
   function monitTodayHours() {
     const p = monitMoscowParts();
     const h = p.hour + p.minute / 60 + p.second / 3600;
@@ -5836,7 +5753,7 @@
       : last && last.nick
         ? [{ nick: last.nick, score: last.score, id: last.id }]
         : [];
-    // Widget shows top-10 only.
+
     const top10 = rows.slice(0, 10);
     if (!top10.length) {
       box.innerHTML = '<div class="monit-widget-row" style="cursor:default;color:#8b93a7">Пока нет топа за окно</div>';
@@ -5920,7 +5837,6 @@
     const xAt = t => pad.l + (t - minT) / (maxT - minT || 1) * w;
     const yAt = s => pad.t + h - (s - minS) / (maxS - minS || 1) * h;
 
-    // Hairline grid
     ctx.strokeStyle = "rgba(255,255,255,0.05)";
     ctx.lineWidth = 1;
     for (let i = 0; i <= 3; i++) {
@@ -5935,7 +5851,6 @@
     const lineColor = up ? "rgba(120, 200, 150, 0.95)" : "rgba(239, 140, 140, 0.95)";
     const bottomY = pad.t + h;
 
-    // Split timeline into leader segments — each #1 gets their statsbg only on their span.
     const segments = [];
     let segStart = 0;
     for (let i = 1; i <= pts.length; i++) {
@@ -6009,7 +5924,6 @@
       fillSegment(seg.from, seg.to, seg.nick ? bgByNick[seg.nick] : null);
     }
 
-    // Thin line on top of fills
     ctx.beginPath();
     pts.forEach((p, i) => {
       const x = xAt(times[i]);
@@ -6257,7 +6171,6 @@
     });
   }
 
-  /** Official agar.su servers: id ↔ host. All scripts resolve from here. */
   var OFFICIAL_SERVERS = [
     { id: "ffa", host: "ffa.agar.su", wins: false },
     { id: "ms", host: "ms.agar.su:6001", wins: false },
@@ -6276,7 +6189,7 @@
   function resolveOfficialServerId(connectionUrl) {
     const host = String(connectionUrl || "").toLowerCase().replace(/^wss?:\/\//, "");
     if (!host) return null;
-    // Port-specific hosts first (ms.agar.su:600x), then bare ffa / ms
+
     for (const s of OFFICIAL_SERVERS) {
       if (s.id === "ffa" || s.id === "ms") continue;
       if (host.includes(s.host)) return s.id;
@@ -6294,7 +6207,6 @@
     return serverId;
   }
 
-  /** FFA/MS — масса; PVP/Tournament — победы. */
   function deathScoreLabelForServer(serverId) {
     const wins = !!(OFFICIAL_BY_ID[serverId] && OFFICIAL_BY_ID[serverId].wins);
     if (wins) {
@@ -6391,19 +6303,19 @@
           const messages = Array.isArray(ev.messages) ? ev.messages : [];
           for (const msg of messages) {
             if (!msg || !msg.text) continue;
-            // PVP / tournament — не показываем рекорды дня (победы скачут)
+
             if (msg.server) {
               const sid = String(msg.server).toLowerCase();
               if (sid.startsWith("pvp") || sid.startsWith("tournament")) continue;
             }
             if (msg.scope === "global") {
-              // Глобальные (год/alltime) с pvp/tournament тоже глушим
+
               const evServer = String(ev.server || "").toLowerCase();
               if (evServer.startsWith("pvp") || evServer.startsWith("tournament")) continue;
               pushStatsSystemChat(S, hooks, msg.text);
             } else if (msg.scope === "server") {
               if (currentServerId && msg.server && currentServerId === msg.server) {
-                // На всякий случай: если сидим на pvp/tournament — молчим
+
                 const cur = String(currentServerId).toLowerCase();
                 if (cur.startsWith("pvp") || cur.startsWith("tournament")) continue;
                 pushStatsSystemChat(S, hooks, msg.text);
@@ -6418,7 +6330,6 @@
       } catch (_) {}
     }
 
-    // Первый запрос только запоминает курсор, без спама старыми событиями
     (async () => {
       try {
         const res = await fetch(STATS_RECORDS_FEED, {
@@ -6560,7 +6471,7 @@ async function updateOnlineCount() {
   } catch (_) {
     return;
   }
-  
+
   let totalOnline = 0;
   for (const row of rows) {
     const id = row.id;
@@ -6569,14 +6480,14 @@ async function updateOnlineCount() {
     const observers = (_b = row.no_playing) != null ? _b : 0;
     const max = (_c = row.max) != null ? _c : 0;
     totalOnline += playing + observers;
-    
+
     const item = document.querySelector(`.server-item[data-server-key="${id}"]`) || document.getElementById(id);
     if (item) {
       const spans = item.querySelectorAll(".online-count");
       if (spans.length >= 2) {
         spans[0].textContent = observers;
         spans[1].textContent = max > 0 ? `${playing}/${max}` : String(playing);
-        
+
         spans.forEach(span => {
           const num = parseInt(span.textContent, 10);
           if (!isNaN(num)) {
@@ -6587,7 +6498,7 @@ async function updateOnlineCount() {
       }
     }
   }
-  
+
   const onlineElement = document.getElementById("online");
   if (onlineElement) onlineElement.textContent = `Онлайн: ${totalOnline}`;
   updateRegionOnlineTotals(getRegionOnlineTotals(rows));
@@ -6774,7 +6685,7 @@ function updateRegionOnlineTotals(totals) {
       let text = value;
       items.forEach((li) => {
         const on = li.getAttribute("data-value") === value;
-        // Текущий выбор уже на кнопке — в списке его не дублируем
+
         li.classList.toggle("is-current", on);
         li.setAttribute("aria-selected", on ? "true" : "false");
         if (on) text = li.textContent.trim();
@@ -6863,7 +6774,7 @@ function updateRegionOnlineTotals(totals) {
       });
     }
     window.__agarsuRefreshHomeRating = () => loadGlobalRatingHome(true);
-    // один раз при загрузке системы (+ смена периода) — без MutationObserver и без 5-мин поллинга
+
     loadGlobalRatingHome(true);
   }
   function setActiveFromHash(S) {
@@ -6889,7 +6800,7 @@ function updateRegionOnlineTotals(totals) {
       onShow: startOnlineCountPolling,
       onHide: stopOnlineCountPolling
     });
-    
+
     if (isOverlaysVisible()) {
       startOnlineCountPolling();
     }
@@ -7213,7 +7124,7 @@ function updateRegionOnlineTotals(totals) {
         passEl.style.display = pass ? "block" : "none";
       }
       setCookie("userPass", pass, 7);
-      // Сохраняем в avatar-containers (localStorage players) — ник или клан
+
       const pick =
         typeof hooks.selectSkin === "function"
           ? hooks.selectSkin
@@ -7420,10 +7331,10 @@ function updateRegionOnlineTotals(totals) {
     wrap.dataset.wired = "1";
   }
   function hideAuthButtons() {
-    /* login form lives in #authlog; hidden via setAccountData */
+
   }
   function showAuthButtons() {
-    /* login form lives in #authlog; shown via onLogout */
+
   }
   function setRestoreStatus(text, type = "info") {
     const el = document.getElementById("restoreStatus");
@@ -7893,20 +7804,20 @@ function updateRegionOnlineTotals(totals) {
   function displayNickFromState(S) {
     const cells = S && S.playerCells;
     const alive = cells && cells.length > 0;
-    // Same as server Chat.js: no cells → spectator
+
     if (!alive) {
       if (S && S.userNickName == null) return "Наблюдатель";
     }
     const cell = alive ? cells[0] : null;
     let name = cell && cell.name || S && S.userNickName || "Игрок";
-    // userNickName is often "nick#password" for pass auth — never show the password in chat
+
     name = String(name || "").split("#")[0].replace(/<[^>]*>/g, "").trim();
     return name || "Игрок";
   }
   function displayColorFromState(S) {
     const cells = S && S.playerCells;
     const alive = cells && cells.length > 0;
-    // Server default for spectators / no cells: rgb(120,120,120)
+
     if (!alive) return "#787878";
     const cell = cells[0];
     if (cell && typeof cell.color === "string" && cell.color) return cell.color;
@@ -8208,9 +8119,7 @@ function updateRegionOnlineTotals(totals) {
     avatar.decoding = "async";
     avatar.dataset.skinNick = lastMessage.name || "";
     const skinId = S.skinList[normalizedName];
-    const _skinHost = S.CONNECTION_URL || S.currentWebSocketUrl || S.wsUrl;
-    const bridgeAvatar = (!skinId && isPetriSkinHost(_skinHost)) ? getPetriSkinUrl(lastMessage.name, _skinHost) : null;
-    setSkinAvatarFromUrl(avatar, skinId ? getSkinImageUrl(skinId) : (bridgeAvatar || SKIN_FALLBACK_URL));
+    setSkinAvatarFromUrl(avatar, skinId ? getSkinImageUrl(skinId) : SKIN_FALLBACK_URL);
     avatar.onerror = () => {
       if (!avatar.dataset.fallback) {
         avatar.dataset.fallback = "1";
@@ -8466,7 +8375,7 @@ function updateRegionOnlineTotals(totals) {
       menu.appendChild(el);
     });
     document.body.appendChild(menu);
-    // Keep menu on screen
+
     requestAnimationFrame(() => {
       const rect = menu.getBoundingClientRect();
       let left = x;
@@ -8759,9 +8668,6 @@ function updateRegionOnlineTotals(totals) {
     return sz > S.foodMaxSize && sz <= Math.max(55, S.foodMaxSize + 20);
   }
   function getClientCellColor2(S, cell) {
-    if (cell.isVirus && /sixz\.ru:6017|:6017\b/i.test(String(S.CONNECTION_URL || S.currentWebSocketUrl || S.wsUrl || ""))) {
-      return "#ff9900";
-    }
     if (!S.customClientColors) return null;
     if (cell.isVirus) return S.clientColorVirus;
     if (cell.isFood) return S.clientColorFood;
@@ -9106,25 +9012,23 @@ function initServers(S) {
   if (!activeRegion) applyRegion(hashRegion || getDefaultRegion(), null, false);
   else if (hashRegion && hashRegion !== activeRegion) applyRegion(hashRegion, null, false);
   const urlParams = new URLSearchParams(window.location.search);
-  
-  // Определяем сервер из URL
+
   if (hashRegion && parsedHash.serverKey && SERVERS[parsedHash.serverKey]) {
     serverKey = parsedHash.serverKey;
   } else {
     const keys = Object.keys(SERVERS);
     if (keys.length) serverKey = keys[0];
   }
-  
+
   S.CONNECTION_URL = serverKey ? SERVERS[serverKey] : null;
   S.SELECTED_SERVER = S.CONNECTION_URL;
-  
-  // Обновляем активный класс на НОВЫХ элементах .server-item
+
   document.querySelectorAll(".server-item").forEach(el => el.classList.remove("active"));
   const activeItem = serverKey ? document.getElementById(getServerDomId(activeRegion, serverKey)) : null;
   if (activeItem) {
     activeItem.classList.add("active");
   }
-  
+
   const titleEl = document.getElementById("serverTitle");
   if (titleEl) {
     const serverName = REGION_CONFIGS[activeRegion]?.servers[serverKey]?.title || serverKey;
@@ -9132,7 +9036,7 @@ function initServers(S) {
   }
 
   if (typeof updateOfficialStatsVisibility === "function") updateOfficialStatsVisibility(S);
-  
+
   if (urlParams.has("spect") || urlParams.has("spectator") || hash.includes("?spect") || hash.includes("?spectator")) {
     window._autoSpectate = true;
   }
@@ -9329,7 +9233,7 @@ function initServers(S) {
         clearInterval(S._spectateFollowTimer);
         S._spectateFollowTimer = null;
       }
-      // Already connected → enter overview now (otherwise only canvas click sent op 1).
+
       outbound.sendSpectate();
       hideGameOverlays();
       hideStatics();
@@ -9657,7 +9561,7 @@ onReady(() => {
     const skinsMap = await loadSkinsList();
     const normalizedNick = normalizeNick(nick);
     const id = skinsMap.has(normalizedNick) ? skinsMap.get(normalizedNick) : "";
-    // Всегда сохраняем в avatar-containers (даже без скина / клан)
+
     savePlayerData(nick, id, getPassInputValue());
     currentIndex = getCurrentPlayerIndex(nick);
     if (currentIndex < 0) currentIndex = 0;
@@ -11292,7 +11196,7 @@ onReady(() => {
       if (pass) setCookie2("userPass", pass, 7); else setCookie2("userPass", "", -1);
     }
     function checkNickStatus(nick) {
-      // Same normalizeNick as pass.txt: clans stay as "[isq]", not stripped "isq"
+
       const normalized = normalizeNick(nick);
       if (allowedNicks.includes(normalized) || normalized === "root") {
         passInput.style.display = "block";
@@ -11417,7 +11321,7 @@ onReady(() => {
           cache: "default"
         });
         if (!res.ok) throw new Error("top100 " + res.status);
-        // если пользователь уже ушёл с вкладки — не рисуем
+
         if (!panel.classList.contains("active")) return;
         const data = await res.json();
         if (!panel.classList.contains("active")) return;
@@ -11478,7 +11382,7 @@ onReady(() => {
     if (isEmbedMode()) {
       document.documentElement.classList.add("agarsu-embed");
     }
-    // Яндекс/Mail.ru счётчики и реклама отключены — без лишнего трафика
+
   }
   async function boot() {
     window.renderDeathBanner = window.renderDeathBanner || function() {};
