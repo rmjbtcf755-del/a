@@ -174,7 +174,6 @@ html.wgl-embed .footer, html.wgl-embed .layout-gutter, html.wgl-embed .add-yande
     z-index: 2;
 }
 
-/* Кастомный выбор периода — без native option UI */
 .period-dd {
     position: relative;
     display: inline-flex;
@@ -304,7 +303,6 @@ html.wgl-embed .footer, html.wgl-embed .layout-gutter, html.wgl-embed .add-yande
     box-shadow: 0 0 0 2px rgba(1, 107, 239, 0.35);
 }
 
-/* Неофициальный сервер: боковые statsWrapper на экране смерти показываем. */
 .rating-home .rating-content {
     background: #0e172c;
     padding: 10px 20px 20px 20px;
@@ -6548,7 +6546,6 @@ img.skin-strip-anim {
     color: #5a6d8c;
 }
 
-/* Mask without type=password — avoids early OS/browser Save prompts */
 .lk-auth-input--secret {
     -webkit-text-security: disc;
     text-security: disc;
@@ -7103,11 +7100,11 @@ img.skin-strip-anim {
 }
 
 .skinswraper img.skin-strip-anim {
-    /* size controlled by applyImgStrip (px + !important) */
+
 }
 
 .skkinn img.skin-strip-anim {
-    /* size controlled by applyImgStrip (px + !important) */
+
 }
 
 #shareText {
@@ -8068,13 +8065,10 @@ img.skin-strip-anim {
     gap: 6px;
 }
 
-/* ============================================
-   НОВЫЙ ДИЗАЙН СЕРВЕРОВ
-   ============================================ */
 .servers {
     margin-top: 10px;
     width: 100%;
-    /* padding: 0 4px; */
+
     box-sizing: border-box;
 }
 
@@ -8129,14 +8123,13 @@ img.skin-strip-anim {
     transform: translateX(0);
     border-left: 2px solid transparent;
     padding-left: 6px;
-    /* Отступ под полосу */
+
 }
 
 .server-item:last-child {
     border-bottom: none;
 }
 
-/* Активный сервер - НЕ двигается, синяя полоса всегда есть */
 .server-item.active {
     background: #1b263b;
     border-left: 2px solid #fafcff;
@@ -8179,20 +8172,15 @@ img.skin-strip-anim {
     font-size: 10px;
 }
 
-/* Онлайн > 0 — зелёный */
 .online-count.has-online {
     color: #4ade80;
     text-shadow: 0 0 10px rgba(74, 222, 128, 0.2);
 }
 
-/* Онлайн = 0 — серый */
 .online-count.no-online {
     color: #4a5568;
 }
 
-/* ============================================
-   МОБИЛЬНЫЕ — 2x2 через FLEX
-   ============================================ */
 @media (max-width: 599px) {
     #overlays {
         align-items: center;
@@ -8268,7 +8256,6 @@ img.skin-strip-anim {
         padding-left: 4px;
     }
 
-    /* Region switcher: vertical stack on phones */
     .home-region-switcher {
         top: 56px;
         justify-content: flex-end;
@@ -8289,7 +8276,6 @@ img.skin-strip-anim {
     }
 }
 
-/* HUD editor */
 .settings-action-btn {
     display: inline-flex;
     align-items: center;
@@ -8494,12 +8480,11 @@ img.skin-strip-anim {
 }
 
 .flag-nl {
-    /* alias → Turkey */
+
     background-color: #E30A17;
     background-image: radial-gradient(circle at 42% 50%, #fff 0 28%, transparent 29%), radial-gradient(circle at 48% 50%, #E30A17 0 22%, transparent 23%), radial-gradient(circle at 58% 50%, #fff 0 10%, transparent 11%);
 }
 
-/* Friends feature (rollback: remove this block + friends.js + API friends*) */
 .friend-arrows {
     position: fixed;
     inset: 0;
@@ -8869,7 +8854,6 @@ img.skin-strip-anim {
     box-shadow: inset 0 0 0 1px rgba(255,59,59,.45);
 }
 
-/* Global auth/shop toast */
 .ui-toast-container {
     position: fixed;
     top: 16px;
@@ -8915,7 +8899,6 @@ img.skin-strip-anim {
     color: #fff;
 }
 
-/* Moved from index.html */
 .lang-selector {
     align-items: flex-start;
 }
@@ -8957,12 +8940,10 @@ img.skin-strip-anim {
     border-color: #3a465c;
 }
 
-/* keep LTR layout for all languages including Arabic */
 html, body {
     direction: ltr!important;
 }
 
-/* translated text must wrap inside UI frames */
 .settings-panel label, .settings-panel-title, .settings-field label, .settings-nav-item, .custom-bg-row > span, .color-picker > span, .shop-receipt-head, .shop-price-list li span, .shop-receipt-total span, .shop-support, .store-auth-title, .store-auth-text, .restore-title, .restore-note, .restore-done-block, .ban-banner-title, .connect-verify-title, .connect-verify-text, .skins-gallery-title, .top-info span, .footer a, .share-label, .card-description .step p, .nav-button, .shop-buy-btn {
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -9059,7 +9040,6 @@ html, body {
     transition: transform .35s ease, filter .35s ease !important;
 }
 
-/* Ready icons: font files are embedded so glyphs are not missing squares. */
 @font-face {
     font-family: "Agarsu Icons";
     font-style: normal;
@@ -9290,7 +9270,6 @@ html, body {
     content: "\f232"
 }
 
-/* Flags: Turkey, Europe, and the language flags from settings. */
 .fi {
     display: inline-block;
     background-repeat: no-repeat;
