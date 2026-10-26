@@ -32,6 +32,12 @@
     color: #ffffff !important;
     font-weight: lighter;
 }
+.banshee{
+    background: linear-gradient(rgb(0 0 0 / 33%), rgb(0 0 0 / 50%)), url(/photo/modersfon.png) !important;
+    background-size: cover !important;
+    color: #ffffff !important;
+    font-weight: lighter;
+}
 
 .chatX_msg[class*="\263Ck\263C"], .chatX_msg[class*="\263CK\263C"] {
     background: linear-gradient(rgb(0 0 0 / 33%), rgb(0 0 0 / 50%)), url(/photo/0003.png) !important;
