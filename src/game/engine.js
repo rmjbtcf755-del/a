@@ -2879,7 +2879,9 @@
       }
       const msg = prepareData(1 + 2 * nick.length + 1);
       msg.setUint8(0, ClientOpcode.NICK);
-      msg.setUint8(1, getColorId(localStorage.getItem("selectedColor")));
+      let colorHex = localStorage.getItem("selectedColor");
+      if (!colorHex || colorHex === "random") colorHex = S._spawnColor;
+      msg.setUint8(1, getColorId(colorHex));
       for (let i = 0; i < nick.length; ++i) {
         msg.setUint16(1 + 2 * i + 1, nick.charCodeAt(i), true);
       }
@@ -4922,6 +4924,95 @@
     } catch (e) {}
     showSettingsPanel(initial);
   }
+  function hexToHsl(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    let r = (n >> 16 & 255) / 255;
+    let g = (n >> 8 & 255) / 255;
+    let b = (n & 255) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let h = 0;
+    let s = 0;
+    const d = max - min;
+    if (d) {
+      s = l > .5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h /= 6;
+    }
+    return { h: h * 360, s, l };
+  }
+  function buildColorWheel(container, colors) {
+    container.textContent = "";
+    const palette = (colors || []).filter(h => /^#[0-9A-Fa-f]{6}$/.test(h)).map(hex => ({ hex, ...hexToHsl(hex) }));
+    const boxW = 230;
+    const boxH = 150;
+    const padX = 4;
+    const padY = 6;
+    const radius = 5;
+    const grow = 1.14;
+    const innerW = boxW - 2 - padX * 2;
+    const innerH = boxH - 2 - padY * 2;
+    const size = Math.min(innerW / (Math.sqrt(3) * (2 * radius + grow)), innerH / (3 * radius + 2 * grow));
+    const hexW = Math.sqrt(3) * size * grow;
+    const hexH = size * 2 * grow;
+    const cx = (boxW - 2) / 2;
+    const cy = (boxH - 2) / 2;
+    const cells = [];
+    for (let q = -radius; q <= radius; q++) {
+      const r1 = Math.max(-radius, -q - radius);
+      const r2 = Math.min(radius, -q + radius);
+      for (let r = r1; r <= r2; r++) cells.push({ q, r });
+    }
+    const add = (hex, x, y, random) => {
+      const d = document.createElement("div");
+      d.className = random ? "item item-random" : "item";
+      d.style.width = hexW + "px";
+      d.style.height = hexH + "px";
+      d.style.left = x + "px";
+      d.style.top = y + "px";
+      d.style.background = hex;
+      if (random) d.dataset.random = "1";
+      else d._cellColorHex = hex;
+      container.appendChild(d);
+    };
+    const spokes = 6 * radius;
+    const slots = cells.map(cell => {
+      const x = size * Math.sqrt(3) * (cell.q + cell.r / 2);
+      const y = size * 1.5 * cell.r;
+      const dist = Math.hypot(x, y);
+      let ang = Math.atan2(y, x);
+      if (ang < 0) ang += Math.PI * 2;
+      const spoke = Math.min(spokes - 1, Math.floor(ang / (Math.PI * 2) * spokes));
+      return { x, y, dist, spoke, center: cell.q === 0 && cell.r === 0 };
+    });
+    const center = slots.find(slot => slot.center);
+    add("#ffffff", cx + center.x - hexW / 2, cy + center.y - hexH / 2, true);
+    const buckets = Array.from({ length: spokes }, () => []);
+    slots.forEach(slot => {
+      if (!slot.center) buckets[slot.spoke].push(slot);
+    });
+    buckets.forEach(bucket => bucket.sort((a, b) => a.dist - b.dist));
+    const byHue = palette.slice().sort((a, b) => a.h - b.h || b.l - a.l);
+    const need = slots.length - 1;
+    const picks = [];
+    for (let i = 0; i < need; i++) {
+      const idx = Math.round(i * (byHue.length - 1) / Math.max(1, need - 1));
+      picks.push(byHue[idx]);
+    }
+    let cursor = 0;
+    for (const bucket of buckets) {
+      const slice = picks.slice(cursor, cursor + bucket.length).sort((a, b) => b.l - a.l);
+      cursor += bucket.length;
+      bucket.forEach((slot, i) => {
+        const color = slice[i];
+        if (!color) return;
+        add(color.hex, cx + slot.x - hexW / 2, cy + slot.y - hexH / 2, false);
+      });
+    }
+  }
   function attachInput(S, hooks) {
     const wHandle = S.wHandle;
     if (!S.keyBinds) S.keyBinds = loadKeybinds();
@@ -5310,39 +5401,47 @@
     };
     const colorSelected = document.getElementById("selectedColor");
     const colorList = document.getElementById("colorList");
-    const skinss = document.getElementById("skinss");
-    const colorSaved = localStorage.getItem("selectedColor");
-    if (colorSaved && colorSelected) {
-      colorSelected.style.background = colorSaved;
-      if (skinss) {
-        skinss.style.borderColor = colorSaved;
-        skinss.style.backgroundColor = colorSaved;
-        skinss.style.boxShadow = `0 0 10px ${colorSaved}`;
-      }
+    function paintChosenColor(value) {
+      const fixed = value && value !== "random" && /^#[0-9A-Fa-f]{6}$/.test(value);
+      if (colorSelected) colorSelected.style.background = fixed ? value : "#fff";
     }
-    if (colorSelected) {
+    const colorSaved = localStorage.getItem("selectedColor");
+    paintChosenColor(colorSaved);
+    function placeColorList() {
+      const anchor = document.querySelector(".from-send");
+      if (!anchor) return;
+      const r = anchor.getBoundingClientRect();
+      const width = colorList.offsetWidth || 230;
+      let left = r.right - width;
+      if (left < 6) left = 6;
+      if (left + width > window.innerWidth - 6) left = window.innerWidth - width - 6;
+      colorList.style.left = left + "px";
+      colorList.style.top = r.bottom + 4 + "px";
+    }
+    if (colorList && colorList.parentElement !== document.body) document.body.appendChild(colorList);
+    if (colorSelected && colorList) {
       colorSelected.onclick = () => {
-        colorList.style.display = colorList.style.display === "none" || colorList.style.display === "" ? "flex" : "none";
+        const open = colorList.style.display === "block";
+        if (open) {
+          colorList.style.display = "none";
+          return;
+        }
+        placeColorList();
+        colorList.style.display = "block";
       };
     }
     if (colorList) {
+      buildColorWheel(colorList, S.cellColors);
       colorList.onclick = evt => {
-        const hex = evt.target._cellColorHex;
-        if (!hex) return;
-        colorSelected.style.background = hex;
-        localStorage.setItem("selectedColor", hex);
-        skinss.style.borderColor = hex;
-        skinss.style.backgroundColor = hex;
-        skinss.style.boxShadow = `0 0 10px ${hex}`;
+        const item = evt.target.closest(".item");
+        if (!item || !colorList.contains(item)) return;
+        const next = item.dataset.random === "1" ? "random" : item._cellColorHex;
+        if (!next) return;
+        localStorage.setItem("selectedColor", next);
+        if (next !== "random") S._spawnColor = next;
+        paintChosenColor(next);
         colorList.style.display = "none";
       };
-      S.cellColors.forEach(hex => {
-        const d = document.createElement("div");
-        d.className = "item";
-        d.style.background = hex;
-        d._cellColorHex = hex;
-        colorList.appendChild(d);
-      });
     }
     wHandle.onblur = function() {
       clearInterval(S.ejectKeyInterval);
@@ -6905,6 +7004,9 @@ function updateRegionOnlineTotals(totals) {
       const nickEl = document.getElementById("nick");
       if (nickEl && !String(nickEl.value || "").trim()) nickEl.value = nickInput;
       hooks.setNick(nickInput + "#" + passInput);
+      if (typeof window.__agarsuSavePlayedNick === "function") {
+        window.__agarsuSavePlayedNick(nickInput, passInput);
+      }
     };
     wHandle.coord = function() {
       if (S.canSendCoord) {
@@ -7850,7 +7952,8 @@ function updateRegionOnlineTotals(totals) {
     }
     try {
       const saved = localStorage.getItem("selectedColor");
-      if (saved) return saved;
+      if (saved && /^#[0-9A-Fa-f]{6}$/.test(saved)) return saved;
+      if (S && S._spawnColor) return S._spawnColor;
     } catch (_) {}
     return "#787878";
   }
@@ -9234,6 +9337,10 @@ function initServers(S) {
       wHandle.setserver(S.SELECTED_SERVER);
       hideGameOverlays();
       S.userNickName = arg;
+      if ((!localStorage.getItem("selectedColor") || localStorage.getItem("selectedColor") === "random") && !(S.playerCells && S.playerCells.length)) {
+        const pool = (S.cellColors || CELL_COLORS).filter(c => /^#[0-9A-Fa-f]{6}$/.test(c));
+        if (pool.length) S._spawnColor = pool[Math.floor(Math.random() * pool.length)];
+      }
       S.spectateFollowNick = null;
       S.spectateFollowPid = 0;
       if (S._spectateFollowTimer) {
@@ -9372,7 +9479,7 @@ onReady(() => {
     }
     return S;
   }
-  var actionInterval = 500;
+  var actionInterval = 1000;
   var actionTimeout;
   var currentIndex = 0;
   var MANUAL_SKINS_NICKS = [ "Муха", "Паук", "Кактус", "Могучая", "Ящерица", "Лиса", "Волк", "Мамонт", "Динозавр", "Мороженое", "Ракета", "Зая", "Фаун", "Бабушка", "Юпитер", "Марс", "Луна", "Гора", "Нептун", "Плутон", "Уран", "Венера", "Сатурн","Теннисистка", "Первобытный", "Влюблённый", "Влюблённая"];
@@ -9578,11 +9685,39 @@ onReady(() => {
     cachedSkinsMapAt = Date.now();
     return map;
   }
-  async function selectSkin(nick) {
+  async function lookupSkinId(nick) {
     const skinsMap = await loadSkinsList();
     const normalizedNick = normalizeNick(nick);
-    const id = skinsMap.has(normalizedNick) ? skinsMap.get(normalizedNick) : "";
-
+    return skinsMap.has(normalizedNick) ? skinsMap.get(normalizedNick) : "";
+  }
+  async function previewNickSkin(nick) {
+    const trimmed = String(nick || "").trim();
+    const mainSkin = document.querySelector("#skinss");
+    const passInput = document.getElementById("pass");
+    const nickInput = document.getElementById("nick");
+    if (!trimmed) {
+      if (mainSkin) {
+        setBackgroundImageIfChanged(mainSkin, "");
+        mainSkin.dataset.skinNick = "";
+      }
+      if (passInput) passInput.style.display = "none";
+      return "";
+    }
+    const id = await lookupSkinId(trimmed);
+    if (nickInput && nickInput.value.trim() !== trimmed) return id;
+    if (mainSkin) {
+      setBackgroundImageIfChanged(mainSkin, id);
+      mainSkin.dataset.skinNick = id ? trimmed : "";
+    }
+    if (passInput) {
+      const normalized = normalizeNick(trimmed);
+      const passListed = typeof window.__agarsuNickHasPass === "function" && window.__agarsuNickHasPass(normalized);
+      passInput.style.display = id || passListed || normalized === "root" ? "block" : "none";
+    }
+    return id;
+  }
+  async function selectSkin(nick) {
+    const id = await lookupSkinId(nick);
     savePlayerData(nick, id, getPassInputValue());
     currentIndex = getCurrentPlayerIndex(nick);
     if (currentIndex < 0) currentIndex = 0;
@@ -9593,11 +9728,14 @@ onReady(() => {
     return players.findIndex(player => normalizeNick(player.nick) === normalizeNick(nick));
   }
   function savePlayerData(nick, id, pass) {
+    const nickValue = String(nick || "").trim();
+    const skinId = String(id || "").trim();
+    if (!nickValue || !skinId) return;
     const players = getPlayers();
     const passValue = pass != null ? String(pass).trim() : getPassInputValue();
     const playerData = {
-      nick,
-      id,
+      nick: nickValue,
+      id: skinId,
       pass: passValue || ""
     };
     const index = players.findIndex(player => normalizeNick(player.nick) === normalizeNick(nick));
@@ -9632,6 +9770,8 @@ onReady(() => {
       setBackgroundImageIfChanged(mainSkin, currentPlayer.id);
       mainSkin.dataset.skinNick = currentPlayer.nick || "";
       setFormNickPass(currentPlayer.nick, currentPlayer.pass || "");
+      const passField = document.getElementById("pass");
+      if (passField && currentPlayer.id) passField.style.display = "block";
       const prevIndex = (currentIndex - 1 + players.length) % players.length;
       if (previousSkin && players[prevIndex] && players.length > 1) {
         setBackgroundImageIfChanged(previousSkin, players[prevIndex].id);
@@ -9777,16 +9917,13 @@ onReady(() => {
       nickInput.addEventListener("input", function() {
         const nickname = this.value;
         clearTimeout(actionTimeout);
-        actionTimeout = setTimeout(async () => {
-          await selectSkin(nickname);
+        actionTimeout = setTimeout(() => {
+          previewNickSkin(nickname);
         }, actionInterval);
       });
     }
     if (passInput && passInput.dataset.homeWired !== "1") {
       passInput.dataset.homeWired = "1";
-      passInput.addEventListener("input", function() {
-        updateCurrentPlayerPass(this.value);
-      });
     }
     bindAvatarContextMenu();
     const players = getPlayers();
@@ -9801,6 +9938,16 @@ onReady(() => {
   window.savePlayerData = savePlayerData;
   window.updateAvatarDisplay = updateAvatarDisplay;
   window.selectSkin = selectSkin;
+  window.__agarsuSavePlayedNick = async function(nick, pass) {
+    const id = await lookupSkinId(nick);
+    if (!id) return;
+    savePlayerData(nick, id, pass);
+    if (typeof window.__agarsuSyncNickPassCookies === "function") {
+      window.__agarsuSyncNickPassCookies(nick, pass || "");
+    }
+    currentIndex = 0;
+    updateAvatarDisplay();
+  };
   window.__agarsuUpdatePlayerPass = updateCurrentPlayerPass;
   window.__agarsuGetPlayers = getPlayers;
   window.loadSkinsList = loadSkinsList;
@@ -11217,15 +11364,19 @@ onReady(() => {
       if (pass) setCookie2("userPass", pass, 7); else setCookie2("userPass", "", -1);
     }
     function checkNickStatus(nick) {
-
       const normalized = normalizeNick(nick);
-      if (allowedNicks.includes(normalized) || normalized === "root") {
+      const saved = getPlayers().find(player => normalizeNick(player.nick) === normalized);
+      const hasSkin = !!(saved && saved.id);
+      if (hasSkin || allowedNicks.includes(normalized) || normalized === "root") {
         passInput.style.display = "block";
       } else {
         passInput.style.display = "none";
       }
     }
     window.__agarsuCheckNickStatus = checkNickStatus;
+    window.__agarsuNickHasPass = function(normalized) {
+      return allowedNicks.includes(normalized);
+    };
     window.__agarsuSyncNickPassCookies = syncNickPassCookies;
     loadPassData().then(data => {
       allowedNicks = data.passUsers || [];
@@ -11245,27 +11396,6 @@ onReady(() => {
       }
     }).catch(error => {
       console.error("Ошибка при загрузке pass.txt:", error);
-    });
-    nickInput.addEventListener("input", () => {
-      const currentNick = nickInput.value.trim();
-      if (currentNick) {
-        setCookie2("userNick", currentNick, 7);
-      } else {
-        setCookie2("userNick", "", -1);
-        passInput.style.display = "none";
-      }
-      checkNickStatus(currentNick);
-    });
-    passInput.addEventListener("input", () => {
-      const currentPass = passInput.value.trim();
-      if (currentPass) {
-        setCookie2("userPass", currentPass, 7);
-      } else {
-        setCookie2("userPass", "", -1);
-      }
-      if (typeof window.__agarsuUpdatePlayerPass === "function") {
-        window.__agarsuUpdatePlayerPass(currentPass);
-      }
     });
   });
   var getLevel2 = xp => ~~((xp / 100 * 2) ** .5);
