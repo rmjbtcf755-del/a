@@ -26,8 +26,6 @@ export function attachViewport() {
     if (w === lastW && h === lastH) return;
     lastW = w;
     lastH = h;
-    window.scrollTo(0, 0);
-    window.dispatchEvent(new Event("resize"));
   };
 
   const schedule = () => {
