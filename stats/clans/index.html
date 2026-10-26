@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Клан — Agar.su</title>
+  <link id="pageIcon" rel="icon" type="image/png" href="https://agar.su/skins/4.png">
+  <style>
+    :root {
+      --bg: #0f1118; --panel: #1a1d28; --panel2: #222633; --text: #e8ecf4;
+      --muted: #8b93a7; --accent: #5b8cff; --border: #2d3345; --gold: #ffd54f;
+      --clan: #81c784;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(ellipse at top, #1a2240 0%, var(--bg) 55%);
+      color: var(--text); min-height: 100vh;
+    }
+    body.has-stats-bg {
+      background:
+        linear-gradient(180deg, rgba(10, 13, 20, 0.62), rgba(10, 13, 20, 0.82)),
+        var(--stats-bg-image) center / cover no-repeat fixed;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden; margin-bottom: 18px;
+    }
+    .card h2 {
+      margin: 0; padding: 16px 18px; background: var(--panel2);
+      border-bottom: 1px solid var(--border); font-size: 1rem;
+    }
+    .card-body { padding: 16px 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; }
+    .pts { color: var(--accent); font-weight: 700; }
+    .pts.rank-gold { color: gold; }
+    .pts.rank-silver { color: #a8a7a4; }
+    .pts.rank-bronze { color: #cb7821; }
+    .muted { color: var(--muted); }
+    .err {
+      color: #ffcdd2; background: rgba(239,83,80,.12);
+      border: 1px solid rgba(239,83,80,.35); padding: 12px; border-radius: 10px;
+    }
+    .profile-head { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 8px; }
+    .avatar {
+      width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--border);
+      object-fit: cover; flex-shrink: 0; background: var(--panel2);
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      overflow: hidden;
+    }
+    .profile-nick { font-size: 1.4rem; font-weight: 700; color: var(--clan); }
+    .profile-nick.rank-gold { color: gold; }
+    .profile-nick.rank-silver { color: #a8a7a4; }
+    .profile-nick.rank-bronze { color: #cb7821; }
+    .btn {
+      padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--panel2); color: var(--text); cursor: pointer; font-size: 0.9rem;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn.ok { border-color: #4caf50; color: #a5d6a7; }
+    .period-row {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      margin: 0 0 16px;
+    }
+    .period-row label { color: var(--muted); font-size: 0.9rem; }
+    .period-row select {
+      background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; font-size: 0.9rem;
+    }
+    .srv-link { color: var(--text); text-decoration: none; }
+    .srv-link:hover { color: var(--accent); text-decoration: none; }
+    a.back { color: var(--muted); text-decoration: none; font-size: 0.95rem; display: inline-block; margin-bottom: 16px; }
+    a.back:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a href="../" class="back">← Глобальный рейтинг</a>
+    <div id="head"><h1>Клан</h1></div>
+    <div class="period-row">
+      <label for="profilePeriod">Период</label>
+      <select id="profilePeriod">
+        <option value="alltime" selected>Всё время</option>
+        <option value="year">Год</option>
+        <option value="today">Сегодня</option>
+        <option value="yesterday">Вчера</option>
+      </select>
+    </div>
+    <p class="muted" id="subNote">Данные обновляются каждые 5 минут.</p>
+    <div id="content"><p class="muted">Загрузка…</p></div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="../skins.js?v=3"></script>
+  <script src="../statsbg.js?v=1"></script>
+  <script>
+    const API = window.STATS_API || "https://agar.su/stats-api";
+    const REFRESH_MS = window.STATS_REFRESH_MS || 300000;
+    const { loadSkins, resolveAvatar, avatarHtml, setFavicon } = window.statsSkins;
+    const serverUrl = window.statsServerUrl;
+
+    function esc(s) {
+      return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function serverCell(sid, name) {
+      const label = esc(name || sid);
+      if (!sid || !serverUrl) return label;
+      return `<a href="${esc(serverUrl(sid))}" class="srv-link">${label}</a>`;
+    }
+
+    function currentProfileLink(id) {
+      return window.statsClanProfileUrl(id);
+    }
+
+    async function copyLink(id) {
+      const url = currentProfileLink(id);
+      try {
+        await navigator.clipboard.writeText(url);
+        const btn = document.getElementById("copyBtn");
+        if (btn) { btn.textContent = "Скопировано!"; btn.classList.add("ok"); setTimeout(() => { btn.textContent = "Копировать ссылку"; btn.classList.remove("ok"); }, 2000); }
+      } catch {
+        prompt("Скопируйте ссылку:", url);
+      }
+    }
+
+    function nickRankClass(stats) {
+      const r = Number(stats && stats.globalRank);
+      if (r < 1 || r > 3) return "";
+      if (r === 1) return "rank-gold";
+      if (r === 2) return "rank-silver";
+      if (r === 3) return "rank-bronze";
+      return "";
+    }
+
+    function setPageMeta(stats, clan, avatarUrl) {
+      const rank = stats.globalRank;
+      const rankPart = rank ? "#" + rank + " " : "";
+      document.title = rankPart + clan + " — Клан · Agar.su";
+
+      const iconUrl = avatarUrl || window.DEFAULT_SKIN_URL || "https://agar.su/skins/4.png";
+      setFavicon(iconUrl);
+    }
+
+    function formatGlobalRank(stats) {
+      if (!stats.globalRank) return '<span class="muted">—</span>';
+      const total = stats.globalRankTotal ? ` <span class="muted">из ${stats.globalRankTotal} кланов</span>` : "";
+      const rankCls = nickRankClass(stats);
+      return `<span class="pts ${rankCls}">${stats.globalRank}</span>${total}`;
+    }
+
+    const PERIOD_LABELS = {
+      today: "Сегодня",
+      yesterday: "Вчера",
+      year: "Год",
+      alltime: "Всё время",
+    };
+
+    function render(stats) {
+      const id = stats.id || stats.uid;
+      const clan = stats.clan || "—";
+      const ava = resolveAvatar(stats);
+      setPageMeta(stats, clan, ava);
+      const period = stats.period || "alltime";
+
+      const head = document.getElementById("head");
+      const rankCls = nickRankClass(stats);
+      head.innerHTML = `
+        <div class="profile-head">
+          ${avatarHtml(ava)}
+          <div>
+            <div class="profile-nick ${rankCls}">${esc(clan)}</div>
+          </div>
+          <button class="btn" id="copyBtn" type="button">Копировать ссылку</button>
+        </div>`;
+      document.getElementById("copyBtn").onclick = () => copyLink(id);
+
+      const members = (stats.members || []).filter(Boolean);
+      const recList = Object.values(stats.records || {});
+      let html = `<div class="card"><h2>Статистика клана · ${esc(PERIOD_LABELS[period] || period)}</h2><div class="card-body">`;
+      html += `<p><strong>Место в рейтинге (${esc(PERIOD_LABELS[period] || period)}):</strong> ${formatGlobalRank(stats)}</p>`;
+      const maxPts = Number(stats.maxPoints) || 150;
+      html += `<p><strong>Очки за период:</strong> <span class="pts">${Number(stats.points) || 0}</span> <span class="muted">из ${maxPts}</span></p>`;
+      html += `<p><strong>Лучший рекорд за период:</strong> ${Number(stats.bestScore) || 0}</p>`;
+      if (members.length) {
+        html += `<p><strong>Участники в топе:</strong> ${members.map((m) => esc(m)).join(", ")}</p>`;
+      }
+      html += `</div></div>`;
+
+      if (stats.lastPoll && stats.lastPoll.servers) {
+        const rows = Object.entries(stats.lastPoll.servers);
+        if (rows.length) {
+          html += `<div class="card"><h2>Последнее обновление</h2><div class="card-body"><table>
+            <thead><tr><th>Сервер</th><th>Место</th><th>Рекорд</th><th>Ник</th><th>Очки</th></tr></thead><tbody>`;
+          rows.forEach(([sid, r]) => {
+            html += `<tr><td>${serverCell(sid, r.serverName || sid)}</td><td>${r.rank || "—"}</td>
+              <td class="pts">${r.score || 0}</td><td>${esc(r.nick || "—")}</td><td>${r.points || 0}</td></tr>`;
+          });
+          html += "</tbody></table></div></div>";
+        }
+      }
+
+      html += `<div class="card"><h2>Рекорды по серверам · ${esc(PERIOD_LABELS[period] || period)}</h2><div class="card-body">`;
+      if (!recList.length) {
+        html += '<p class="muted">Нет данных по серверам за этот период.</p>';
+      } else {
+        html += '<table><thead><tr><th>Сервер</th><th>Тип</th><th>Рекорд</th><th>Ник</th><th>Место</th><th>Статус</th></tr></thead><tbody>';
+        recList.forEach((r) => {
+          const label = r.scoreLabel || "Масса";
+          const has = r.hasRecord === true || (Number(r.score) || 0) > 0;
+          html += `<tr>
+            <td>${serverCell(r.serverId, r.serverName || r.serverId)}</td>
+            <td class="muted">${esc(label)}</td>
+            <td class="pts">${has ? (r.score || 0) : "—"}</td>
+            <td>${has ? esc(r.nick || "—") : '<span class="muted">—</span>'}</td>
+            <td>${has && r.rank ? r.rank : "—"}</td>
+            <td>${has ? '<span style="color:#a5d6a7">есть</span>' : '<span class="muted">нет</span>'}</td>
+          </tr>`;
+        });
+        html += "</tbody></table>";
+      }
+      html += "</div></div>";
+      return html;
+    }
+
+    async function load(id, forceSkins) {
+      const box = document.getElementById("content");
+      if (!box.dataset.loaded) box.innerHTML = '<p class="muted">Загрузка…</p>';
+      const period = document.getElementById("profilePeriod")?.value || "alltime";
+      history.replaceState(null, "", "?id=" + encodeURIComponent(id) + "&period=" + encodeURIComponent(period));
+      try {
+        await loadSkins(forceSkins);
+        const res = await fetch(
+          API + "/api/clan/" + encodeURIComponent(id) + "?period=" + encodeURIComponent(period),
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error(res.status === 404 ? "Клан не найден" : "HTTP " + res.status);
+        const data = await res.json();
+        box.innerHTML = render(data);
+        if (typeof applyStatsBgForNick === "function") {
+          await applyStatsBgForNick(data.clan || data.nick || "");
+        } else if (data.statsBgUrl && typeof applyStatsBodyBackground === "function") {
+          applyStatsBodyBackground(data.statsBgUrl);
+        }
+        box.dataset.loaded = "1";
+      } catch (e) {
+        box.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+      }
+    }
+
+    const q = new URLSearchParams(location.search);
+    const qId = q.get("id");
+    const qPeriod = q.get("period");
+    if (qPeriod && document.getElementById("profilePeriod")) {
+      document.getElementById("profilePeriod").value = qPeriod;
+    }
+    document.getElementById("profilePeriod")?.addEventListener("change", () => {
+      if (qId) load(qId, false);
+    });
+    if (qId) {
+      load(qId, true);
+      setInterval(() => load(qId, false), REFRESH_MS);
+    } else {
+      document.getElementById("content").innerHTML = '<div class="err">Укажите id: clans/?id=40</div>';
+    }
+  </script>
+</body>
+</html>
