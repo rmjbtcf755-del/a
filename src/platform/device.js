@@ -1,7 +1,3 @@
-/**
- * Класс устройства: ПК, Android, iOS и запас по CPU/памяти.
- * deviceMemory нет в Safari и Firefox — тогда решают ядра, сеть и указатель.
- */
 export function detectDevice() {
   const ua = navigator.userAgent || "";
   const touchPoints = navigator.maxTouchPoints || 0;

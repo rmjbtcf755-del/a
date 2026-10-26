@@ -8,10 +8,6 @@ function hasSavedQuality() {
   return document.cookie.split(";").some((part) => part.trim().startsWith(KEY + "="));
 }
 
-/**
- * Первый запуск: качество берётся из профиля устройства.
- * Если игрок уже выбирал качество в настройках, значение не трогаем.
- */
 export function applyProfile(profile) {
   if (hasSavedQuality()) return;
   const value = profile.quality === "low" || profile.quality === "medium" ? profile.quality : "high";

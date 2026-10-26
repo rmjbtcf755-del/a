@@ -1,4 +1,3 @@
-/** Опкоды протокола agar.su. Числа совпадают с текущим клиентом. */
   export const ClientOpcode = {
     NICK: 0,
     SPECTATE: 1,

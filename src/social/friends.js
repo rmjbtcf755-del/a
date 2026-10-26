@@ -1,7 +1,3 @@
-/**
- * Друзья. Это копия, которая реально выполнялась из main.js
- * (она подключалась позже friends.js и заменяла её).
- */
 (function (global) {
   "use strict";
 
@@ -10,7 +6,7 @@
   const PLAY_POLL_MS = 4000;
   const PRESENCE_MS = 2000;
   const DRAW_MS = 200;
-  // ~1.25 sectors on a 5×5 minimap (E1↔C1 ≈ 2 sectors)
+
   const ARROW_MAP_DIST = 0.25;
   const ARROW_EDGE = 0.47;
   const LS = {
@@ -188,7 +184,7 @@
   }
 
   function decorateLbName(name) {
-    // In-game leaderboard stays plain (no friend marks).
+
     return String(name || "");
   }
 
@@ -204,7 +200,7 @@
 
   function isPlaying() {
     if (!S) return false;
-    // Dead / spectating: 0 own cells → no arrows for me, and presence playing=false
+
     return !!(S.playerCells && S.playerCells.length > 0 && S.ws && S.ws.readyState === 1);
   }
 
@@ -232,7 +228,7 @@
     if ((Number(S?.accountData?.xp) || 0) < MIN_XP && !force) return;
     const playing = isPlaying();
     if (!force && lastPlayingSent === playing && !playing) {
-      // already reported death; skip spam while dead
+
       return;
     }
     const body = {
@@ -253,7 +249,7 @@
 
   function tickPresence() {
     const playing = isPlaying();
-    // Immediate push on death / respawn
+
     if (lastPlayingSent !== null && lastPlayingSent !== playing) {
       sendPresence(true);
       return;
@@ -315,7 +311,7 @@
     if (!key || (!optArrows() && !optMinimap())) return [];
     if (!isPlaying()) return [];
     return (playData.friends || []).filter((f) => {
-      // Friend died (0 cells → playing false) → hide until they play again
+
       if (!f.playing || !f.online) return false;
       if (!f.serverKey || String(f.serverKey) !== String(key)) return false;
       return Number.isFinite(f.x) && Number.isFinite(f.y);
@@ -338,7 +334,7 @@
       const dx = them.nx - me.nx;
       const dy = them.ny - me.ny;
       const dist = Math.hypot(dx, dy);
-      // Far enough on minimap (≈ >1 sector; E1↔C1 ≈ 0.4)
+
       if (!(dist >= ARROW_MAP_DIST)) return;
 
       const ang = Math.atan2(dy, dx);
@@ -613,7 +609,7 @@
         return;
       }
       const results = (data.results || []).filter((f) => {
-        // Already friends / already sent — don't keep visible in search
+
         return f.relation !== "friends" && f.relation !== "outgoing";
       });
       results.forEach((f) => {
@@ -725,7 +721,7 @@
       if (!tabF || tabF.dataset.wired) return showNickClanTab;
       tabF.dataset.wired = "1";
       tabF.onclick = () => {
-        // deactivate others via patched show
+
         if (typeof showNickClanTab === "function") showNickClanTab(S, "friends");
       };
       return patchShowTab(showNickClanTab);

@@ -1,5 +1,3 @@
-/* Язык интерфейса и режим встраивания. */
-/* Moved from index.html */
 window.renderDeathBanner = window.renderDeathBanner || function () {};
       window.trackPlayGoal = window.trackPlayGoal || function () {};
 
@@ -76,7 +74,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (el.id === 'accountMenuLabel') {
-        // keep dynamic login label unless it still looks like the default
+
         var cur = getText(el).trim();
         var ruLogin = 'Войти';
         if (!el.hasAttribute('data-ru')) el.setAttribute('data-ru', ruLogin);
@@ -154,7 +152,6 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
   else boot();
 })();
 
-// Встройка с каталога wgl: прячем юр.полоску
       (function () {
         try {
           var q = new URLSearchParams(location.search);

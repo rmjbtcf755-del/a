@@ -1,4 +1,3 @@
-/** Чтение бинарных пакетов сервера, little-endian. */
 export class BinaryReader {
     constructor(view) {
       this.view = view;

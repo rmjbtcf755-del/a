@@ -37,7 +37,6 @@
     const S = state.S;
     if (!S) return state.lastCellNick || "";
 
-    // Только ник с живой клетки (после входа в игру), не из поля ввода
     const cells = S.playerCells;
     if (cells && cells.length) {
       for (let i = 0; i < cells.length; i++) {
@@ -54,7 +53,6 @@
       }
     }
 
-    // Пока клетка есть в памяти сессии — оставляем последний ник (после смерти)
     if (S.ws && S.ws.readyState === 1) return state.lastCellNick || "";
     state.lastCellNick = "";
     return "";
@@ -199,7 +197,6 @@
     const root = document.getElementById("agarAdminRoot");
     if (!toggle) return;
 
-    // На телефонах позицию задаёт CSS (fixed), не перебиваем inline.
     if (window.innerWidth <= 760) {
       toggle.style.right = "";
       toggle.style.top = "";

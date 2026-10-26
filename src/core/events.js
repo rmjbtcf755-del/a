@@ -1,4 +1,3 @@
-/** Шина меню: магазин, смерть, аккаунт, смена сервера. */
   export class AppEvents extends EventTarget {
     emit(type, detail) {
       this.dispatchEvent(new CustomEvent(type, {

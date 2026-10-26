@@ -1,7 +1,3 @@
-/**
- * Поверхность игры: непрозрачный 2D-контекст и потолок плотности пикселей.
- * Альфа выключена только у #canvas — превью скинов в магазине остаётся с прозрачностью.
- */
 export function installSurface(profile) {
   const nativeDpr = window.devicePixelRatio || 1;
   const cap = Math.max(1, profile.dprCap || nativeDpr);

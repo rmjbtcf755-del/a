@@ -1,4 +1,3 @@
-/* Личный кабинет: вход, регистрация, восстановление. */
 (function () {
   const API = "https://api.agar.su/api";
   const PASS_RE = /^[0-9a-zA-Z.]{4,64}$/;
@@ -14,7 +13,7 @@
   let wired = false;
   let regTimerId = null;
   let recTimerId = null;
-  /** @type {{ token: string, uid: string, pass: string, fromRegister: boolean } | null} */
+
   let pendingDone = null;
 
   function $(id) {
@@ -301,14 +300,12 @@
     }
   }
 
-  /** LK login id from API (uid / ulogin / id) — never email. */
   function resolveLkUid(data) {
     const raw = data && (data.uid ?? data.ulogin ?? data.id);
     const uid = String(raw == null ? "" : raw).trim();
     return /^\d{1,12}$/.test(uid) ? uid : "";
   }
 
-  /** Banner instead of alert: show ID + pass, then OK → login. No OS password save. */
   function showDoneBanner(uid, pass, token, fromRegister) {
     const id = resolveLkUid({ uid });
     if (!token) return;
@@ -627,7 +624,7 @@
     document.addEventListener("lk-recover-ready", (ev) => {
       const token = ev.detail?.recoverToken;
       if (!token) return;
-      // НЕ вызывать showView("recover") — он делает resetRecover() и убивает токен
+
       openRecoverPassword(token, ev.detail?.needs_email !== false, !!ev.detail?.has_pass);
     });
   }

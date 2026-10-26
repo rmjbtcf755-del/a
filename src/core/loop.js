@@ -1,7 +1,3 @@
-/**
- * Кадровый планировщик.
- * На слабых устройствах режет частоту, в фоне останавливает requestAnimationFrame.
- */
 export function installLoop(profile) {
   const native = window.requestAnimationFrame.bind(window);
   const minDelta = profile.fpsCap > 0 ? 1000 / profile.fpsCap : 0;
