@@ -1,0 +1,18 @@
+{
+  "name": "Agar.su",
+  "short_name": "Agar.su",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070c16",
+  "theme_color": "#070c16",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
