@@ -190,7 +190,6 @@
         const xAt = (t) => pad.l + ((t - minT) / (maxT - minT || 1)) * w;
         const yAt = (s) => pad.t + h - ((s - minS) / (maxS - minS || 1)) * h;
 
-        // grid
         ctx.strokeStyle = "rgba(45,51,69,.9)";
         ctx.lineWidth = 1;
         for (let i = 0; i <= 3; i++) {
@@ -198,7 +197,6 @@
           ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + w, y); ctx.stroke();
         }
 
-        // area + line
         const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
         const up = (Number(srv.delta) || 0) >= 0;
         grad.addColorStop(0, up ? "rgba(102,187,106,.28)" : "rgba(239,83,80,.28)");
@@ -220,7 +218,6 @@
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // nick labels when leader changes (max ~5)
         const labels = [];
         let prevNick = null;
         for (let i = 0; i < pts.length; i++) {
@@ -246,7 +243,6 @@
           ctx.fillText(text, Math.min(cssW - 30, Math.max(30, x)), Math.max(12, y - 8));
         }
 
-        // time axis ends
         ctx.fillStyle = "#8b93a7";
         ctx.font = "11px Segoe UI, sans-serif";
         ctx.textAlign = "left";
@@ -266,8 +262,8 @@
           const p = pts[best];
           const x = xAt(times[best]);
           const y = yAt(scores[best]);
-          // crosshair
-          drawChart._last = { best }; // noop marker
+
+          drawChart._last = { best };
           tip.style.display = "block";
           tip.style.left = Math.min(cssW - 180, Math.max(8, x + 10)) + "px";
           tip.style.top = Math.max(8, y - 10) + "px";
@@ -296,8 +292,7 @@
           return;
         }
 
-        // Prefer config order if present
-        const order = ["ffa", "ms", "pvp1", "pvp2", "tournament", "tournament2"];
+        const order = ["ffa", "exp", "ms", "pvp1", "pvp2", "tournament", "tournament2"];
         servers.sort((a, b) => {
           const ia = order.indexOf(a.id); const ib = order.indexOf(b.id);
           return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
@@ -358,7 +353,7 @@
       });
 
       window.addEventListener("resize", () => {
-        // soft redraw by reloading lightweight payload
+
         clearTimeout(window.__monitResize);
         window.__monitResize = setTimeout(load, 200);
       });
