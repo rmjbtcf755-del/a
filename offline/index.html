@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Офлайн</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10141c; color: #e8eef7; overflow: hidden; font: 15px/1.35 "Segoe UI", sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; touch-action: none; }
+  .hud, .board, .legend { position: fixed; z-index: 2; pointer-events: none; }
+  .hud { left: 16px; top: 14px; text-shadow: 0 1px 2px #000; }
+  .hud b { font-size: 28px; font-weight: 700; }
+  .hud span { display: block; opacity: .85; font-size: 13px; }
+  .hud .net b { font-size: 13px; font-weight: 700; }
+  .board { right: 16px; top: 14px; min-width: 190px; background: rgba(8, 10, 16, .55); border-radius: 10px; padding: 10px 12px; }
+  .board h2 { margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .7; }
+  .board #lb > div { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; }
+  .board .me { color: #ffd56a; }
+  .panel { position: fixed; z-index: 4; left: 12px; top: 78px; bottom: 12px; width: min(300px, calc(100vw - 280px)); overflow: auto; background: rgba(10, 13, 20, .88); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+  .panel h2 { margin: 0 0 4px; font-size: 16px; }
+  .panel .sub { margin: 0 0 10px; color: #9aabbf; font-size: 12px; }
+  .devbtn { width: 100%; border: 0; border-radius: 8px; padding: 8px 10px; font: inherit; font-weight: 700; cursor: pointer; background: #243044; color: #e8eef7; }
+  .devbtn.on { background: #ffd56a; color: #2a2208; }
+  .group { margin-top: 12px; border-radius: 10px; padding: 8px; background: rgba(255,255,255,.03); }
+  .group h3 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(255,255,255,.15); }
+  .row { margin: 7px 0; }
+  .row label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .row .hint { display: block; color: #8ea0b5; font-size: 11px; margin-top: 1px; }
+  .row input[type="range"] { width: 100%; margin: 4px 0 0; accent-color: var(--c, #8ab4ff); }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .check input { accent-color: var(--c, #8ab4ff); }
+  .reset { margin-top: 12px; width: 100%; border: 0; border-radius: 8px; padding: 8px 10px; font: inherit; cursor: pointer; background: #3ddc97; color: #062216; font-weight: 700; }
+  .legend { left: 324px; right: 150px; bottom: 12px; z-index: 6; display: flex; flex-wrap: wrap; gap: 2px 12px; background: rgba(8, 10, 16, .78); border-radius: 10px; padding: 8px 10px; font-size: 11px; }
+  .legend div { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+  .legend i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+  .modal { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(6, 8, 12, .28); pointer-events: none; }
+  .modal .card { pointer-events: auto; }
+  .card { width: min(380px, calc(100vw - 32px)); background: #171d29; border-radius: 14px; padding: 22px; box-shadow: 0 16px 50px rgba(0,0,0,.35); }
+  .card h1 { margin: 0 0 6px; font-size: 22px; }
+  .card p { margin: 0 0 14px; color: #b7c3d4; }
+  .card input { width: 100%; box-sizing: border-box; border: 0; border-radius: 8px; padding: 10px 12px; font: inherit; background: #0e131c; color: inherit; }
+  .card button { margin-top: 12px; width: 100%; border: 0; border-radius: 8px; padding: 10px 12px; font: inherit; font-weight: 700; background: #3ddc97; color: #062216; cursor: pointer; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div class="hud">
+  <b id="mass">0</b>
+  <span id="rank"></span>
+  <span class="net"><b id="fps">0</b> fps · ping <b>0</b></span>
+</div>
+<div class="board"><h2>Таблица</h2><div id="lb"></div></div>
+<aside class="panel" id="panel"></aside>
+<div class="legend hidden" id="legend"></div>
+<div class="modal" id="modal">
+  <form class="card" id="play">
+    <h1 id="title">Офлайн</h1>
+    <p>Физика считается на этой странице. Слева панель: цифры и переключатели применяются сразу. Режим разработчика рисует цветные обводки и полоски — что к чему относится.</p>
+    <input id="nick" maxlength="16" placeholder="Ник" autocomplete="off">
+    <button type="submit">Играть</button>
+  </form>
+</div>
+<script src="quad.js"></script>
+<script src="physics.js"></script>
+<script>
+const GROUPS = [
+  { title: 'Движение', color: '#5ec8ff', items: [
+    { flag: 'border', label: 'Граница карты', hint: 'Клетка останавливается на краю' },
+    { flag: 'selfPush', label: 'Расталкивание своих', hint: 'Куски упираются, пока не могут слиться' },
+    { key: 'playerSpeed', label: 'Скорость', min: 5, max: 140, step: 1, hint: 'База скорости. Тяжёлая клетка всё равно медленнее' }
+  ]},
+  { title: 'Деление', color: '#c084fc', items: [
+    { flag: 'split', label: 'Деление', hint: 'Пробел режет клетку пополам' },
+    { flag: 'merge', label: 'Слияние', hint: 'Свои куски снова становятся одной клеткой' },
+    { flag: 'crazySplit', label: 'Безумный сплит', hint: 'Свои куски не сталкиваются' },
+    { flag: 'MegaSplit', label: 'Мегаслияние', hint: 'Куски сливаются почти сразу' },
+    { key: 'playerMinMassSplit', label: 'Масса для деления', min: 16, max: 400, step: 1, hint: 'Ниже этого пробел ничего не делает' },
+    { key: 'playerMaxCells', label: 'Максимум клеток', min: 1, max: 64, step: 1, hint: 'Сколько кусков можно иметь' },
+    { key: 'playerSplitSpeedMultiplier', label: 'Рывок деления', min: 1, max: 20, step: 0.5, hint: 'Как далеко улетает новая клетка' },
+    { key: 'playerSplitSizeMult', label: 'Смещение деления', min: 0.1, max: 1, step: 0.05, hint: 'Насколько новая клетка выносится из центра' },
+    { key: 'playerRecombineTime', label: 'Пауза слияния', min: 0, max: 120, step: 1, hint: 'Секунды до того, как куски могут слиться' }
+  ]},
+  { title: 'Выброс', color: '#f0c14a', items: [
+    { flag: 'eject', label: 'Выброс массы', hint: 'Клавиша W стреляет куском массы' },
+    { flag: 'feedVirus', label: 'Кормление вируса', hint: 'Выброс, попавший в вирус, кормит его' },
+    { flag: 'ejectSpawn', label: 'Спавн из выброса', hint: 'Иногда новая клетка появляется из выброшенной массы' },
+    { key: 'playerMinMassEject', label: 'Масса для выброса', min: 16, max: 400, step: 1, hint: 'Ниже этого W не стреляет' },
+    { key: 'ejectMass', label: 'Масса куска', min: 1, max: 80, step: 1, hint: 'Сколько массы в одном выстреле' },
+    { key: 'ejectMassLoss', label: 'Потеря при выстреле', min: 1, max: 80, step: 1, hint: 'Сколько снимается с тебя' },
+    { key: 'ejectSpeed', label: 'Скорость выброса', min: 20, max: 400, step: 5, hint: 'Как быстро летит кусок' },
+    { key: 'ejectSpawnPlayer', label: 'Шанс спавна, %', min: 0, max: 100, step: 1, hint: 'Шанс появиться на месте выброса' }
+  ]},
+  { title: 'Еда', color: '#3ddc97', items: [
+    { flag: 'food', label: 'Спавн еды', hint: 'Новая еда появляется, пока не заполнен лимит' },
+    { flag: 'eatFood', label: 'Еда съедается', hint: 'Клетка забирает массу еды' },
+    { flag: 'eatEject', label: 'Выброс съедается', hint: 'Чужой и свой выброс даёт массу' },
+    { key: 'foodMass', label: 'Масса еды', min: 1, max: 40, step: 1, hint: 'Масса каждой новой точки' },
+    { key: 'foodMaxAmount', label: 'Лимит еды', min: 0, max: 8000, step: 50, hint: 'Больше этого на карте не будет' },
+    { key: 'foodSpawnAmount', label: 'Еды за раз', min: 0, max: 2000, step: 10, hint: 'Сколько точек добавляется за интервал' },
+    { key: 'spawnInterval', label: 'Интервал еды', min: 1, max: 80, step: 1, hint: 'Раз в сколько тиков появляется еда' },
+    { key: 'foodStartAmount', label: 'Еда при сборе', min: 0, max: 4000, step: 50, hint: 'Сколько еды кладётся кнопкой «Собрать карту»' }
+  ]},
+  { title: 'Вирусы', color: '#ff5d73', items: [
+    { flag: 'virus', label: 'Спавн вирусов', hint: 'Карта добирает вирусы до минимума' },
+    { flag: 'eatVirus', label: 'Вирус можно съесть', hint: 'Достаточно большая клетка поглощает вирус' },
+    { flag: 'virusPop', label: 'Вирус взрывает', hint: 'Съеденный вирус раскидывает тебя на куски' },
+    { key: 'virusMinAmount', label: 'Минимум вирусов', min: 0, max: 400, step: 1, hint: 'Сколько вирусов карта старается держать' },
+    { key: 'virusMaxAmount', label: 'Максимум вирусов', min: 0, max: 600, step: 1, hint: 'Выше этого выброс проходит сквозь вирус' },
+    { key: 'virusStartMass', label: 'Масса вируса', min: 20, max: 400, step: 5, hint: 'Размер нового и выстрелившего вируса' },
+    { key: 'virusFeedAmount', label: 'Кормлений до выстрела', min: 1, max: 16, step: 1, hint: 'Сколько W нужно, чтобы вирус выстрелил' }
+  ]},
+  { title: 'Масса', color: '#ff9f43', items: [
+    { flag: 'decay', label: 'Распад массы', hint: 'Большая клетка потихоньку худеет' },
+    { flag: 'eatPlayers', label: 'Есть игроков', hint: 'Можно съесть чужую клетку, если ты заметно больше' },
+    { key: 'playerStartMass', label: 'Стартовая масса', min: 5, max: 500, step: 1, hint: 'Масса в момент появления' },
+    { key: 'playerMaxMass', label: 'Потолок массы', min: 100, max: 50000, step: 100, hint: 'Дальше масса не растёт' },
+    { key: 'playerMassDecayRate', label: 'Скорость распада', min: 0, max: 0.02, step: 0.0001, hint: 'Доля массы, которую клетка теряет' },
+    { key: 'playerMinMassDecay', label: 'Распад от массы', min: 0, max: 500, step: 1, hint: 'Легче этого клетка не худеет' }
+  ]},
+  { title: 'Карта', color: '#8ab4ff', items: [
+    { key: 'mapWidth', label: 'Ширина карты', min: 2000, max: 60000, step: 500, hint: 'Мир по горизонтали' },
+    { key: 'mapHeight', label: 'Высота карты', min: 2000, max: 60000, step: 500, hint: 'Мир по вертикали' },
+    { key: 'serverViewBaseX', label: 'Обзор по X', min: 400, max: 4000, step: 20, hint: 'Насколько далеко видно в стороны' },
+    { key: 'serverViewBaseY', label: 'Обзор по Y', min: 300, max: 3000, step: 20, hint: 'Насколько далеко видно вверх и вниз' },
+    { key: 'serverTickMs', label: 'Тик, мс', min: 20, max: 100, step: 1, hint: 'Формулы скорости считались на 50 мс' }
+  ]},
+  { title: 'Боты', color: '#7ec8ff', items: [
+    { flag: 'bots', label: 'Боты', hint: 'Пустые клетки с именами ходят по карте' },
+    { key: 'serverBots', label: 'Число ботов', min: 0, max: 24, step: 1, hint: 'Сколько ботов держать на карте' }
+  ]}
+];
+
+const LEGEND = [
+  ['#ffd56a', 'твоя клетка'],
+  ['#7ec8ff', 'чужая клетка'],
+  ['#3ddc97', 'еда и радиус поедания'],
+  ['#ff5d73', 'вирус и шкала кормления'],
+  ['#f0c14a', 'выброшенная масса'],
+  ['#5ec8ff', 'вектор скорости'],
+  ['#c084fc', 'куски ещё не сливаются'],
+  ['#ff9f43', 'полоска массы и распада']
+];
+
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+const massEl = document.getElementById('mass');
+const rankEl = document.getElementById('rank');
+const fpsEl = document.getElementById('fps');
+const lbEl = document.getElementById('lb');
+const modal = document.getElementById('modal');
+const title = document.getElementById('title');
+const nickInput = document.getElementById('nick');
+const panel = document.getElementById('panel');
+const legendEl = document.getElementById('legend');
+const game = OfflinePhysics.createGame();
+game.boot();
+game.start();
+
+let alive = false;
+let dev = false;
+let lastCam = null;
+let frames = 0;
+let fpsMark = performance.now();
+const mouseCss = { x: innerWidth / 2, y: innerHeight / 2 };
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.floor(innerWidth * dpr));
+  canvas.height = Math.max(1, Math.floor(innerHeight * dpr));
+}
+addEventListener('resize', resize);
+resize();
+
+function buildPanel() {
+  const head = document.createElement('div');
+  head.innerHTML = '<h2>Физика</h2><p class="sub">Меняется сразу. Наружу ничего не уходит.</p>';
+  const devBtn = document.createElement('button');
+  devBtn.type = 'button';
+  devBtn.className = 'devbtn';
+  devBtn.textContent = 'Режим разработчика';
+  devBtn.addEventListener('click', () => {
+    dev = !dev;
+    devBtn.classList.toggle('on', dev);
+    devBtn.textContent = dev ? 'Режим разработчика включён' : 'Режим разработчика';
+    legendEl.classList.toggle('hidden', !dev);
+  });
+  head.appendChild(devBtn);
+  panel.appendChild(head);
+
+  GROUPS.forEach((group) => {
+    const box = document.createElement('section');
+    box.className = 'group';
+    box.style.setProperty('--c', group.color);
+    const h = document.createElement('h3');
+    h.innerHTML = '<i class="swatch" style="background:' + group.color + '"></i>' + group.title;
+    box.appendChild(h);
+    group.items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      if (item.flag) {
+        const on = item.flag === 'crazySplit' || item.flag === 'MegaSplit'
+          ? !!game.config[item.flag]
+          : !!game.flags[item.flag];
+        row.innerHTML = '<label class="check"><input type="checkbox"' + (on ? ' checked' : '') + '> ' + item.label + '</label><span class="hint">' + item.hint + '</span>';
+        row.querySelector('input').addEventListener('change', (event) => {
+          game.setFlag(item.flag, event.target.checked);
+        });
+      } else {
+        const value = game.config[item.key];
+        row.innerHTML = '<label><span>' + item.label + '</span><b>' + formatVal(value) + '</b></label><span class="hint">' + item.hint + '</span>';
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = item.min;
+        slider.max = item.max;
+        slider.step = item.step;
+        slider.value = value;
+        const shown = row.querySelector('b');
+        slider.addEventListener('input', () => {
+          const next = Number(slider.value);
+          shown.textContent = formatVal(next);
+          game.setValue(item.key, next);
+        });
+        row.appendChild(slider);
+      }
+      box.appendChild(row);
+    });
+    panel.appendChild(box);
+  });
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'reset';
+  reset.textContent = 'Собрать карту заново';
+  reset.addEventListener('click', () => game.resetWorld());
+  panel.appendChild(reset);
+
+  legendEl.innerHTML = LEGEND.map((item) =>
+    '<div style="color:' + item[0] + '"><i></i><span>' + item[1] + '</span></div>'
+  ).join('');
+}
+function formatVal(value) {
+  if (Math.abs(value) >= 100 || Number.isInteger(value)) return String(Math.round(value * 1000) / 1000);
+  return String(Math.round(value * 10000) / 10000);
+}
+buildPanel();
+
+function alpha() {
+  const ms = Math.max(20, game.tickMs());
+  let t = (performance.now() - game._simAt) / ms;
+  if (t < 0) t = 0;
+  if (t > 1) t = 1;
+  return t;
+}
+function posOf(cell) {
+  const a = alpha();
+  const px = cell._px == null ? cell.position.x : cell._px;
+  const py = cell._py == null ? cell.position.y : cell._py;
+  const ps = cell._ps == null ? cell.size : cell._ps;
+  return {
+    x: px + (cell.position.x - px) * a,
+    y: py + (cell.position.y - py) * a,
+    s: Math.max(1, ps + (cell.size - ps) * a)
+  };
+}
+function smoothCam() {
+  const human = game.human;
+  const sx = game.viewSx || game.config.serverViewBaseX;
+  const sy = game.viewSy || game.config.serverViewBaseY;
+  if (!human.cells.length) return { x: 0, y: 0, sx: sx, sy: sy };
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < human.cells.length; i++) {
+    const p = posOf(human.cells[i]);
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / human.cells.length, y: y / human.cells.length, sx: sx, sy: sy };
+}
+function scaleOf(cam) {
+  return Math.min(canvas.width / Math.max(1, cam.sx * 2), canvas.height / Math.max(1, cam.sy * 2));
+}
+function pushMouse() {
+  if (!lastCam) return;
+  const dpr = canvas.width / Math.max(1, innerWidth);
+  const scale = scaleOf(lastCam);
+  const aim = {
+    x: lastCam.x + (mouseCss.x * dpr - canvas.width / 2) / scale,
+    y: lastCam.y + (mouseCss.y * dpr - canvas.height / 2) / scale
+  };
+  if (!game.human.mouse) game.human.mouse = { x: aim.x, y: aim.y };
+  game.human.mouse.x = aim.x;
+  game.human.mouse.y = aim.y;
+}
+canvas.addEventListener('pointermove', (event) => {
+  mouseCss.x = event.clientX;
+  mouseCss.y = event.clientY;
+  pushMouse();
+});
+addEventListener('keydown', (event) => {
+  const tag = event.target && event.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (!game.human.cells.length) { play(); return; }
+    if (!event.repeat) game.input.splitArm = true;
+    game.input.split = true;
+  } else if (event.code === 'KeyW') {
+    if (!event.repeat) game.input.ejectArm = true;
+    game.input.eject = true;
+  }
+});
+addEventListener('keyup', (event) => {
+  if (event.code === 'Space') game.input.split = false;
+  if (event.code === 'KeyW') game.input.eject = false;
+});
+addEventListener('blur', () => {
+  game.input.split = false;
+  game.input.eject = false;
+});
+function play() {
+  game.spawn(game.human, nickInput.value);
+  pushMouse();
+}
+document.getElementById('play').addEventListener('submit', (event) => {
+  event.preventDefault();
+  play();
+});
+
+function strokeRing(x, y, r, color, width) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+}
+function typeColor(cell, own) {
+  if (own) return '#ffd56a';
+  if (cell.cellType === 0) return '#7ec8ff';
+  if (cell.cellType === 1) return '#3ddc97';
+  if (cell.cellType === 2) return '#ff5d73';
+  if (cell.cellType === 3) return '#f0c14a';
+  return '#ffffff';
+}
+function drawBars(x, y) {
+  const c = game.config;
+  const human = game.human;
+  let mass = 0;
+  let wait = 0;
+  for (let i = 0; i < human.cells.length; i++) {
+    mass += human.cells[i].mass;
+    if (human.cells[i].recombineTicks > wait) wait = human.cells[i].recombineTicks;
+  }
+  const speed = human.cells[0] ? human.cells[0].getSpeed() : 0;
+  const mergeMax = Math.max(20, ((c.playerRecombineTime | 0) + 2) * 20);
+  const rows = [
+    [Math.sqrt(mass / Math.max(1, c.playerMaxMass)), '#ff9f43', 'масса ' + (mass | 0)],
+    [Math.min(1, speed / Math.max(1, c.playerSpeed)), '#5ec8ff', 'скорость ' + speed.toFixed(1)],
+    [Math.min(1, human.cells.length / Math.max(1, c.playerMaxCells)), '#c084fc', 'клетки ' + human.cells.length + '/' + (c.playerMaxCells | 0)],
+    [Math.min(1, mass / Math.max(1, c.playerMinMassSplit)), '#c084fc', mass >= c.playerMinMassSplit ? 'деление можно' : 'деление нет'],
+    [Math.min(1, mass / Math.max(1, c.playerMinMassEject)), '#f0c14a', mass >= c.playerMinMassEject ? 'выброс можно' : 'выброс нет'],
+    [wait > 0 ? 1 - Math.min(1, wait / mergeMax) : 1, '#c084fc', wait > 0 ? 'слияние ждёт' : 'слияние можно'],
+    [mass >= c.playerMinMassDecay && game.flags.decay ? 1 : 0, '#ff9f43', game.flags.decay ? 'распад' : 'распад выкл']
+  ];
+  const w = 74;
+  const h = 7;
+  let by = y - rows.length * 11;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = '11px Segoe UI, sans-serif';
+  for (let i = 0; i < rows.length; i++) {
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.fillRect(x, by, w, h);
+    ctx.fillStyle = rows[i][1];
+    ctx.fillRect(x, by, w * rows[i][0], h);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(rows[i][2], x + w + 4, by + h / 2);
+    by += 11;
+  }
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  frames++;
+  const now = performance.now();
+  if (now - fpsMark >= 500) {
+    fpsEl.textContent = String(Math.round(frames * 1000 / (now - fpsMark)));
+    frames = 0;
+    fpsMark = now;
+  }
+  const cam = smoothCam();
+  lastCam = cam;
+  pushMouse();
+  const w = canvas.width;
+  const h = canvas.height;
+  const scale = scaleOf(cam);
+  const originX = w / 2 - cam.x * scale;
+  const originY = h / 2 - cam.y * scale;
+  const toX = (x) => originX + x * scale;
+  const toY = (y) => originY + y * scale;
+  ctx.fillStyle = '#10141c';
+  ctx.fillRect(0, 0, w, h);
+
+  const step = 100;
+  const left = cam.x - w / 2 / scale;
+  const right = cam.x + w / 2 / scale;
+  const top = cam.y - h / 2 / scale;
+  const bottom = cam.y + h / 2 / scale;
+  ctx.strokeStyle = 'rgba(255,255,255,.05)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = Math.floor(left / step) * step; x < right; x += step) {
+    ctx.moveTo(toX(x), 0);
+    ctx.lineTo(toX(x), h);
+  }
+  for (let y = Math.floor(top / step) * step; y < bottom; y += step) {
+    ctx.moveTo(0, toY(y));
+    ctx.lineTo(w, toY(y));
+  }
+  ctx.stroke();
+  if (game.flags.border) {
+    const border = game.border;
+    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(toX(border.minx), toY(border.miny), border.width * scale, border.height * scale);
+  }
+
+  const cells = (game.viewCells || []).slice().sort((a, b) => a.cellType - b.cellType || a.size - b.size);
+  let ownScreen = null;
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    if (!cell || !cell.position) continue;
+    const p = posOf(cell);
+    const x = toX(p.x);
+    const y = toY(p.y);
+    const r = Math.max(1, p.s * scale);
+    const own = cell.owner === game.human;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgb(' + (cell.color.r | 0) + ',' + (cell.color.g | 0) + ',' + (cell.color.b | 0) + ')';
+    ctx.fill();
+    if (cell.spiked) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.strokeStyle = dev ? '#ff5d73' : ctx.fillStyle;
+      ctx.lineWidth = Math.max(1, r * 0.08);
+      ctx.beginPath();
+      for (let s = 0; s < 16; s++) {
+        const a = (Math.PI * 2 * s) / 16;
+        ctx.moveTo(Math.cos(a) * r * 0.92, Math.sin(a) * r * 0.92);
+        ctx.lineTo(Math.cos(a) * r * 1.16, Math.sin(a) * r * 1.16);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (dev) {
+      strokeRing(x, y, r + 2, typeColor(cell, own), 2);
+      if (own) strokeRing(x, y, r, '#3ddc97', 1);
+      if (cell.cellType === 2) {
+        const feed = Math.min(1, (cell.fed || 0) / Math.max(1, game.config.virusFeedAmount));
+        ctx.fillStyle = 'rgba(0,0,0,.45)';
+        ctx.fillRect(x - r, y + r + 3, r * 2, 4);
+        ctx.fillStyle = '#ff5d73';
+        ctx.fillRect(x - r, y + r + 3, r * 2 * feed, 4);
+      }
+      if (cell.cellType === 0 && cell.recombineTicks > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#c084fc';
+        ctx.lineWidth = 2;
+        ctx.arc(x, y, r + 5, -Math.PI / 2, -Math.PI / 2 + Math.min(1, cell.recombineTicks / 200) * Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (own) {
+      ctx.lineWidth = Math.max(2, r * 0.06);
+      ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.stroke();
+    }
+    if (cell.cellType === 0 && r > 16) {
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '700 ' + Math.max(12, r * 0.32) + 'px Segoe UI, sans-serif';
+      const name = cell.getName();
+      if (name) ctx.fillText(name, x, y - r * 0.12);
+      ctx.font = '600 ' + Math.max(11, r * 0.22) + 'px Segoe UI, sans-serif';
+      ctx.fillText(String(cell.mass | 0), x, y + (name ? r * 0.22 : 0));
+    }
+    if (own) ownScreen = { x: x, y: y, r: r, cell: cell };
+  }
+  if (dev && ownScreen) {
+    const cell = ownScreen.cell;
+    const speed = cell.getSpeed();
+    const ang = Math.atan2(game.human.mouse.x - cell.position.x, game.human.mouse.y - cell.position.y);
+    const len = Math.min(140, speed * scale * 3);
+    ctx.beginPath();
+    ctx.strokeStyle = '#5ec8ff';
+    ctx.lineWidth = 2;
+    ctx.moveTo(ownScreen.x, ownScreen.y);
+    ctx.lineTo(ownScreen.x + Math.sin(ang) * len, ownScreen.y + Math.cos(ang) * len);
+    ctx.stroke();
+    drawBars(ownScreen.x + ownScreen.r + 8, ownScreen.y - ownScreen.r);
+  }
+
+  const border = game.border;
+  const mw = 150;
+  const mh = 150;
+  const mx = w - mw - 18;
+  const my = h - mh - 18;
+  ctx.fillStyle = 'rgba(8,10,16,.55)';
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.strokeStyle = 'rgba(255,255,255,.25)';
+  ctx.strokeRect(mx, my, mw, mh);
+  for (let i = 0; i < game.nodesPlayer.length; i++) {
+    const blob = game.nodesPlayer[i];
+    const p = posOf(blob);
+    const px = mx + ((p.x - border.minx) / border.width) * mw;
+    const py = my + ((p.y - border.miny) / border.height) * mh;
+    const mine = blob.owner === game.human;
+    ctx.fillStyle = mine ? '#ffd56a' : '#7ec8ff';
+    ctx.fillRect(px, py, mine ? 4 : 3, mine ? 4 : 3);
+  }
+}
+
+function paintHud() {
+  let mass = 0;
+  for (let i = 0; i < game.human.cells.length; i++) mass += game.human.cells[i].mass;
+  const nowAlive = game.human.cells.length > 0;
+  massEl.textContent = nowAlive ? String(mass | 0) : '0';
+  rankEl.textContent = nowAlive && game.human.lbRank ? 'место ' + game.human.lbRank : (nowAlive ? '' : 'наблюдение');
+  const rows = game.leaderboard || [];
+  lbEl.innerHTML = rows.map((row) =>
+    '<div class="' + (row === game.human ? 'me' : '') + '"><span>' + escapeHtml(row.name || 'клетка') + '</span><span>' + (row.getScore(false) | 0) + '</span></div>'
+  ).join('') || '<div><span>пусто</span><span></span></div>';
+  if (nowAlive && !alive) modal.classList.add('hidden');
+  if (!nowAlive && alive) {
+    title.textContent = 'Съели';
+    modal.classList.remove('hidden');
+  }
+  alive = nowAlive;
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+setInterval(paintHud, 200);
+paintHud();
+nickInput.focus();
+draw();
+</script>
+</body>
+</html>
