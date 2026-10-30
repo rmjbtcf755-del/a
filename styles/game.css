@@ -7874,18 +7874,9 @@ img.skin-strip-anim {
     }
 }
 
-.agario {
-    background: url(/photo/q9JcEjm.gif);
-    width: 17px;
-    height: 17px;
-    background-size: 20px;
-}
 
-.agari {
-    background: url(https://Р°РіР°СЂРёРѕ.СЂС„/favicon.png);
-    width: 17px;
-    height: 17px;
-    background-size: cover;
+.fi-agario {
+    background-image: url(/photo/agario.png);
 }
 
 .tg-icon {
