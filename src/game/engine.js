@@ -7998,9 +7998,10 @@ function updateRegionOnlineTotals(totals) {
     ar: "sa",
     es: "es",
     pl: "pl",
-    de: "de"
+    de: "de",
+    agar: "agario"
   };
-  var CHAT_LANG_TAG_RE = /\s*:(ru|en|uk|tr|zh|ar|es|pl|de)\s*$/i;
+  var CHAT_LANG_TAG_RE = /\s*:(ru|en|uk|tr|zh|ar|es|pl|de|agar)\s*$/i;
   function getChatUiLangCode() {
     let lang = "ru";
     try {
