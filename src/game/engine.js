@@ -1660,64 +1660,46 @@
   function drawBatchedFood(ctx, S) {
     const list = S.nodelist;
     if (!list || !list.length) return 0;
-    const zoom = S.viewZoom || 1;
-    const halfW = S.canvasWidth / (2 * zoom);
-    const halfH = S.canvasHeight / (2 * zoom);
-    const left = S.nodeX - halfW;
-    const right = S.nodeX + halfW;
-    const top = S.nodeY - halfH;
-    const bottom = S.nodeY + halfH;
-    let arcs = S._foodArcs;
-    let rects = S._foodRects;
-    if (!arcs) arcs = S._foodArcs = new Map();
-    if (!rects) rects = S._foodRects = new Map();
-    arcs.forEach(coords => { coords.length = 0; });
-    rects.forEach(coords => { coords.length = 0; });
+    let buckets = S._foodBuckets;
+    if (!buckets) buckets = S._foodBuckets = new Map();
+    else buckets.forEach(coords => { coords.length = 0; });
     let drawn = 0;
+    const frameId = S.frameId;
     const ts = S.timestamp;
     for (let i = 0; i < list.length; i++) {
       const node = list[i];
       if (!node || !node.isFood || node.destroyed) continue;
-      if (node.nx !== node.x || node.ny !== node.y || node.nSize !== node.size) node.updatePos();
-      const rad = node.size || node.nSize || 0;
-      if (!(rad > 0) || rad * zoom < 1.25) continue;
-      const x = node.x;
-      const y = node.y;
-      if (x + rad < left || y + rad < top || x - rad > right || y - rad > bottom) continue;
+      if (node._posFrame !== frameId) {
+        node.updatePos();
+        node._posFrame = frameId;
+      }
+      if (!node.shouldRender()) continue;
       node.drawTime = ts;
+      let r = node.size;
+      if (!r) r = 20;
       const color = typeof node.getEffectiveColor === "function" ? node.getEffectiveColor() : node.color || "#FFFFFF";
-      const boxes = rad * zoom < 4 ? rects : arcs;
-      let bucket = boxes.get(color);
+      let bucket = buckets.get(color);
       if (!bucket) {
         bucket = [];
-        boxes.set(color, bucket);
+        buckets.set(color, bucket);
       }
-      bucket.push(x, y, rad);
+      bucket.push(node.x, node.y, r);
       drawn++;
     }
     if (!drawn) return 0;
-    const paint = (coords, color, round) => {
+    buckets.forEach(function (coords, color) {
       if (!coords.length) return;
       ctx.beginPath();
-      if (round) {
-        for (let i = 0; i < coords.length; i += 3) {
-          const x = coords[i];
-          const y = coords[i + 1];
-          const r = coords[i + 2];
-          ctx.moveTo(x + r, y);
-          ctx.arc(x, y, r, 0, 2 * Math.PI);
-        }
-      } else {
-        for (let i = 0; i < coords.length; i += 3) {
-          const r = coords[i + 2];
-          ctx.rect(coords[i] - r, coords[i + 1] - r, r * 2, r * 2);
-        }
+      for (let i = 0; i < coords.length; i += 3) {
+        const x = coords[i];
+        const y = coords[i + 1];
+        const rad = coords[i + 2];
+        ctx.moveTo(x + rad, y);
+        ctx.arc(x, y, rad, 0, 2 * Math.PI);
       }
       ctx.fillStyle = color;
       ctx.fill();
-    };
-    rects.forEach((coords, color) => paint(coords, color, false));
-    arcs.forEach((coords, color) => paint(coords, color, true));
+    });
     return drawn;
   }
   function drawGrid() {
@@ -1775,16 +1757,13 @@
     ctx.strokeStyle = lineColor;
     ctx.globalAlpha = .1;
     ctx.beginPath();
-    let step = 50;
-    if (vw / step > 70) step = Math.ceil(vw / 70 / 50) * 50;
-    if (vh / step > 70) step = Math.ceil(vh / 70 / 50) * 50;
-    let x = -.5 + (-nodeX + vw / 2) % step;
-    for (;x < vw; x += step) {
+    let x = -.5 + (-nodeX + vw / 2) % 50;
+    for (;x < vw; x += 50) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, vh);
     }
-    let y = -.5 + (-nodeY + vh / 2) % step;
-    for (;y < vh; y += step) {
+    let y = -.5 + (-nodeY + vh / 2) % 50;
+    for (;y < vh; y += 50) {
       ctx.moveTo(0, y);
       ctx.lineTo(vw, y);
     }
@@ -8210,7 +8189,7 @@ function updateRegionOnlineTotals(totals) {
       const enterName = lastMessage.name;
       nameSpan.textContent = `${enterName}:`;
       simpleDiv.appendChild(nameSpan);
-      simpleDiv.append(` ${parseChatLangTag(lastMessage.message).text}`);
+      simpleDiv.append(` ${lastMessage.message}`);
       document.getElementById("chatX_feed").appendChild(simpleDiv);
       if (S.chatStickToBottom !== false) scrollChatToLatest(document.getElementById("chatX_feed"));
       return;
