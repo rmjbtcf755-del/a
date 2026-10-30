@@ -1657,38 +1657,199 @@
     drawTouch(ctx);
   }
 
-  function drawBatchedFood(ctx, S) {
-    const list = S.nodelist;
-    if (!list || !list.length) return 0;
-    let buckets = S._foodBuckets;
-    if (!buckets) buckets = S._foodBuckets = new Map();
-    else buckets.forEach(coords => { coords.length = 0; });
-    let drawn = 0;
-    const frameId = S.frameId;
-    const ts = S.timestamp;
-    for (let i = 0; i < list.length; i++) {
-      const node = list[i];
-      if (!node || !node.isFood || node.destroyed) continue;
-      if (node._posFrame !== frameId) {
-        node.updatePos();
-        node._posFrame = frameId;
+  var FOOD_GL_STRIDE = 7;
+  function foodHexRgb(hex) {
+    const n = parseInt(String(hex || "").replace("#", ""), 16);
+    if (!Number.isFinite(n)) return [1, 1, 1];
+    return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+  }
+  function ensureFoodGl(S) {
+    if (S._foodGl) return S._foodGl;
+    if (S._foodGlFailed) return null;
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl", {
+      alpha: true,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: true
+    });
+    if (!gl) {
+      S._foodGlFailed = true;
+      return null;
+    }
+    const vert = `
+      attribute vec2 aPos;
+      attribute float aSize;
+      attribute float aHot;
+      attribute vec3 aColor;
+      uniform vec2 uCam;
+      uniform float uZoom;
+      uniform vec2 uScreen;
+      varying vec3 vColor;
+      varying float vHot;
+      void main() {
+        vec2 screen = (aPos - uCam) * uZoom + uScreen * 0.5;
+        gl_Position = vec4(screen.x / uScreen.x * 2.0 - 1.0, 1.0 - screen.y / uScreen.y * 2.0, 0.0, 1.0);
+        float d = max(aSize * 2.0 * uZoom, 1.0);
+        if (aHot > 0.5) d *= 1.55;
+        gl_PointSize = d;
+        vColor = aColor;
+        vHot = aHot;
       }
-      if (!node.shouldRender()) continue;
-      node.drawTime = ts;
-      let r = node.size;
-      if (!r) r = 20;
-      const color = typeof node.getEffectiveColor === "function" ? node.getEffectiveColor() : node.color || "#FFFFFF";
+    `;
+    const frag = `
+      precision mediump float;
+      varying vec3 vColor;
+      varying float vHot;
+      void main() {
+        vec2 c = gl_PointCoord - vec2(0.5);
+        float d = length(c);
+        if (d > 0.5) discard;
+        float alpha = 1.0 - smoothstep(0.42, 0.5, d);
+        vec3 col = vColor;
+        if (vHot > 0.5) {
+          float ring = smoothstep(0.28, 0.34, d) * (1.0 - smoothstep(0.44, 0.5, d));
+          col = mix(vColor, vec3(1.0), 0.25 + ring * 0.75);
+          alpha = max(alpha, ring);
+        }
+        gl_FragColor = vec4(col, alpha);
+      }
+    `;
+    function shader(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        gl.deleteShader(sh);
+        return null;
+      }
+      return sh;
+    }
+    const vs = shader(gl.VERTEX_SHADER, vert);
+    const fs = shader(gl.FRAGMENT_SHADER, frag);
+    if (!vs || !fs) {
+      S._foodGlFailed = true;
+      return null;
+    }
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      S._foodGlFailed = true;
+      return null;
+    }
+    const buf = gl.createBuffer();
+    const qvert = `
+      attribute vec2 aCenter;
+      attribute float aRadius;
+      attribute vec3 aColor;
+      attribute vec2 aCorner;
+      uniform vec2 uCam;
+      uniform float uZoom;
+      uniform vec2 uScreen;
+      varying vec3 vColor;
+      varying vec2 vCorner;
+      void main() {
+        vec2 world = aCenter + aCorner * aRadius;
+        vec2 screen = (world - uCam) * uZoom + uScreen * 0.5;
+        gl_Position = vec4(screen.x / uScreen.x * 2.0 - 1.0, 1.0 - screen.y / uScreen.y * 2.0, 0.0, 1.0);
+        vColor = aColor;
+        vCorner = aCorner;
+      }
+    `;
+    const qfrag = `
+      precision mediump float;
+      varying vec3 vColor;
+      varying vec2 vCorner;
+      void main() {
+        float d = length(vCorner);
+        if (d > 1.0) discard;
+        float rim = smoothstep(0.82, 0.98, d);
+        float alpha = 1.0 - smoothstep(0.94, 1.0, d);
+        vec3 col = mix(vColor, vColor * 0.72, rim);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `;
+    const qvs = shader(gl.VERTEX_SHADER, qvert);
+    const qfs = shader(gl.FRAGMENT_SHADER, qfrag);
+    let qprog = qvs && qfs ? gl.createProgram() : null;
+    let quadOk = false;
+    if (qprog) {
+      gl.attachShader(qprog, qvs);
+      gl.attachShader(qprog, qfs);
+      gl.linkProgram(qprog);
+      quadOk = !!gl.getProgramParameter(qprog, gl.LINK_STATUS);
+      if (!quadOk) {
+        gl.deleteProgram(qprog);
+        qprog = null;
+      }
+    }
+    const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+    const gpu = {
+      canvas,
+      gl,
+      prog,
+      buf,
+      maxPoint: range ? range[1] : 64,
+      data: new Float32Array(FOOD_GL_STRIDE * 4096),
+      count: -1,
+      loc: {
+        pos: gl.getAttribLocation(prog, "aPos"),
+        size: gl.getAttribLocation(prog, "aSize"),
+        hot: gl.getAttribLocation(prog, "aHot"),
+        color: gl.getAttribLocation(prog, "aColor"),
+        cam: gl.getUniformLocation(prog, "uCam"),
+        zoom: gl.getUniformLocation(prog, "uZoom"),
+        screen: gl.getUniformLocation(prog, "uScreen")
+      },
+      quadOk,
+      qprog,
+      qbuf: quadOk ? gl.createBuffer() : null,
+      qdata: new Float32Array(48 * 1024),
+      qloc: quadOk ? {
+        center: gl.getAttribLocation(qprog, "aCenter"),
+        radius: gl.getAttribLocation(qprog, "aRadius"),
+        color: gl.getAttribLocation(qprog, "aColor"),
+        corner: gl.getAttribLocation(qprog, "aCorner"),
+        cam: gl.getUniformLocation(qprog, "uCam"),
+        zoom: gl.getUniformLocation(qprog, "uZoom"),
+        screen: gl.getUniformLocation(qprog, "uScreen")
+      } : null
+    };
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, gpu.data, gl.DYNAMIC_DRAW);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    S._foodGl = gpu;
+    return gpu;
+  }
+  function foodPointChanged(node, color, hot) {
+    return node._gx !== node.x || node._gy !== node.y || node._gs !== node.size || node._gc !== color || node._gh !== hot;
+  }
+  function rememberFoodPoint(node, color, hot) {
+    node._gx = node.x;
+    node._gy = node.y;
+    node._gs = node.size;
+    node._gc = color;
+    node._gh = hot;
+  }
+  function drawFoodArcs(ctx, foods) {
+    const buckets = new Map();
+    for (let i = 0; i < foods.length; i++) {
+      const node = foods[i];
+      const color = node._foodColor || "#FFFFFF";
       let bucket = buckets.get(color);
       if (!bucket) {
         bucket = [];
         buckets.set(color, bucket);
       }
-      bucket.push(node.x, node.y, r);
-      drawn++;
+      const rad = node.size || 20;
+      bucket.push(node.x, node.y, rad);
     }
-    if (!drawn) return 0;
     buckets.forEach(function (coords, color) {
-      if (!coords.length) return;
       ctx.beginPath();
       for (let i = 0; i < coords.length; i += 3) {
         const x = coords[i];
@@ -1700,6 +1861,188 @@
       ctx.fillStyle = color;
       ctx.fill();
     });
+  }
+  function drawBatchedFood(ctx, S) {
+    const list = S.nodelist;
+    S.gpuBodies = false;
+    if (!list || !list.length) return 0;
+    const frameId = S.frameId;
+    const ts = S.timestamp;
+    const zoom = S.viewZoom || 1;
+    const gpuTry = ensureFoodGl(S);
+    const maxPoint = gpuTry ? gpuTry.maxPoint : 0;
+    const gpuFood = [];
+    const arcFood = [];
+    let dirty = false;
+    for (let i = 0; i < list.length; i++) {
+      const node = list[i];
+      if (!node || !node.isFood || node.destroyed) continue;
+      if (node._posFrame !== frameId && (node.x !== node.nx || node.y !== node.ny || node.size !== node.nSize)) {
+        node.updatePos();
+        node._posFrame = frameId;
+      }
+      node.drawTime = ts;
+      const hot = node.isExperimentalFood ? 1 : 0;
+      const color = typeof node.getEffectiveColor === "function" ? node.getEffectiveColor() : node.color || "#FFFFFF";
+      node._foodColor = color;
+      const screenD = Math.max((node.size || 20) * 2 * zoom * (hot ? 1.55 : 1), 1);
+      if (!gpuTry || screenD > maxPoint) {
+        if (!node.shouldRender()) continue;
+        arcFood.push(node);
+        continue;
+      }
+      if (foodPointChanged(node, color, hot)) dirty = true;
+      gpuFood.push(node);
+    }
+    let drawn = 0;
+    if (gpuFood.length && gpuTry) {
+      const gpu = gpuTry;
+      const gl = gpu.gl;
+      const need = gpuFood.length * FOOD_GL_STRIDE;
+      if (gpu.data.length < need) {
+        let cap = gpu.data.length;
+        while (cap < need) cap *= 2;
+        gpu.data = new Float32Array(cap);
+        dirty = true;
+      }
+      if (dirty || gpu.count !== gpuFood.length) {
+        const data = gpu.data;
+        for (let i = 0; i < gpuFood.length; i++) {
+          const node = gpuFood[i];
+          const hot = node.isExperimentalFood ? 1 : 0;
+          const rgb = foodHexRgb(node._foodColor);
+          const o = i * FOOD_GL_STRIDE;
+          data[o] = node.x;
+          data[o + 1] = node.y;
+          data[o + 2] = node.size || 20;
+          data[o + 3] = hot;
+          data[o + 4] = rgb[0];
+          data[o + 5] = rgb[1];
+          data[o + 6] = rgb[2];
+          rememberFoodPoint(node, node._foodColor, hot);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buf);
+        gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, need), gl.DYNAMIC_DRAW);
+        gpu.count = gpuFood.length;
+      }
+      const w = S.canvasWidth || ctx.canvas.width;
+      const h = S.canvasHeight || ctx.canvas.height;
+      if (gpu.canvas.width !== w || gpu.canvas.height !== h) {
+        gpu.canvas.width = w;
+        gpu.canvas.height = h;
+      }
+      gl.viewport(0, 0, w, h);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(gpu.prog);
+      gl.uniform2f(gpu.loc.cam, S.nodeX, S.nodeY);
+      gl.uniform1f(gpu.loc.zoom, zoom);
+      gl.uniform2f(gpu.loc.screen, w, h);
+      const stride = FOOD_GL_STRIDE * 4;
+      if (gpu.qloc) {
+        if (gpu.qloc.center >= 0) gl.disableVertexAttribArray(gpu.qloc.center);
+        if (gpu.qloc.radius >= 0) gl.disableVertexAttribArray(gpu.qloc.radius);
+        if (gpu.qloc.color >= 0) gl.disableVertexAttribArray(gpu.qloc.color);
+        if (gpu.qloc.corner >= 0) gl.disableVertexAttribArray(gpu.qloc.corner);
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buf);
+      gl.enableVertexAttribArray(gpu.loc.pos);
+      gl.vertexAttribPointer(gpu.loc.pos, 2, gl.FLOAT, false, stride, 0);
+      gl.enableVertexAttribArray(gpu.loc.size);
+      gl.vertexAttribPointer(gpu.loc.size, 1, gl.FLOAT, false, stride, 8);
+      gl.enableVertexAttribArray(gpu.loc.hot);
+      gl.vertexAttribPointer(gpu.loc.hot, 1, gl.FLOAT, false, stride, 12);
+      gl.enableVertexAttribArray(gpu.loc.color);
+      gl.vertexAttribPointer(gpu.loc.color, 3, gl.FLOAT, false, stride, 16);
+      gl.drawArrays(gl.POINTS, 0, gpuFood.length);
+      drawn += gpuFood.length;
+    }
+    const cellQuads = [];
+    if (gpuTry && gpuTry.quadOk) {
+      for (let i = 0; i < list.length; i++) {
+        const node = list[i];
+        if (!node || node.destroyed || node.isFood) continue;
+        if (node._posFrame !== frameId) {
+          node.updatePos();
+          node._posFrame = frameId;
+        }
+        if (!node.shouldRender()) continue;
+        node.drawTime = ts;
+        node._foodColor = typeof node.getEffectiveColor === "function" ? node.getEffectiveColor() : node.color || "#FFFFFF";
+        cellQuads.push(node);
+      }
+    }
+    if (cellQuads.length && gpuTry && gpuTry.quadOk) {
+      const gpu = gpuTry;
+      const gl = gpu.gl;
+      const verts = cellQuads.length * 6;
+      const need = verts * 8;
+      if (gpu.qdata.length < need) {
+        let cap = gpu.qdata.length;
+        while (cap < need) cap *= 2;
+        gpu.qdata = new Float32Array(cap);
+      }
+      const data = gpu.qdata;
+      const corners = [-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1];
+      let wri = 0;
+      for (let i = 0; i < cellQuads.length; i++) {
+        const node = cellQuads[i];
+        const rgb = foodHexRgb(node._foodColor);
+        const rad = node.size || 20;
+        for (let c = 0; c < 12; c += 2) {
+          data[wri++] = node.x;
+          data[wri++] = node.y;
+          data[wri++] = rad;
+          data[wri++] = rgb[0];
+          data[wri++] = rgb[1];
+          data[wri++] = rgb[2];
+          data[wri++] = corners[c];
+          data[wri++] = corners[c + 1];
+        }
+      }
+      if (!gpuFood.length) {
+        const w0 = S.canvasWidth || ctx.canvas.width;
+        const h0 = S.canvasHeight || ctx.canvas.height;
+        if (gpu.canvas.width !== w0 || gpu.canvas.height !== h0) {
+          gpu.canvas.width = w0;
+          gpu.canvas.height = h0;
+        }
+        gl.viewport(0, 0, w0, h0);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.useProgram(gpu.qprog);
+      gl.uniform2f(gpu.qloc.cam, S.nodeX, S.nodeY);
+      gl.uniform1f(gpu.qloc.zoom, zoom);
+      gl.uniform2f(gpu.qloc.screen, gpu.canvas.width, gpu.canvas.height);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gpu.qbuf);
+      gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, need), gl.DYNAMIC_DRAW);
+      if (gpu.loc.pos >= 0) gl.disableVertexAttribArray(gpu.loc.pos);
+      if (gpu.loc.size >= 0) gl.disableVertexAttribArray(gpu.loc.size);
+      if (gpu.loc.hot >= 0) gl.disableVertexAttribArray(gpu.loc.hot);
+      if (gpu.loc.color >= 0) gl.disableVertexAttribArray(gpu.loc.color);
+      gl.enableVertexAttribArray(gpu.qloc.center);
+      gl.vertexAttribPointer(gpu.qloc.center, 2, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(gpu.qloc.radius);
+      gl.vertexAttribPointer(gpu.qloc.radius, 1, gl.FLOAT, false, 32, 8);
+      gl.enableVertexAttribArray(gpu.qloc.color);
+      gl.vertexAttribPointer(gpu.qloc.color, 3, gl.FLOAT, false, 32, 12);
+      gl.enableVertexAttribArray(gpu.qloc.corner);
+      gl.vertexAttribPointer(gpu.qloc.corner, 2, gl.FLOAT, false, 32, 24);
+      gl.drawArrays(gl.TRIANGLES, 0, verts);
+      drawn += cellQuads.length;
+    }
+    S.gpuBodies = !!(gpuTry && gpuTry.quadOk);
+    if ((gpuFood.length || cellQuads.length) && gpuTry) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(gpuTry.canvas, 0, 0);
+      ctx.restore();
+    }
+    if (arcFood.length) {
+      drawFoodArcs(ctx, arcFood);
+      drawn += arcFood.length;
+    }
     return drawn;
   }
   function drawGrid() {
@@ -3387,6 +3730,7 @@
       node.isEjected = flagEjected;
       node.isAgitated = flagAgitated;
       if (type === 1 || type === 4) node.isFood = true;
+      node.isExperimentalFood = type === 4;
       node.nx = posX;
       node.ny = posY;
       node.setSize(size);
@@ -3424,6 +3768,7 @@
         }
         food.color = foodColor;
         food.isFood = true;
+        food.isExperimentalFood = false;
         food.isVirus = false;
         food.isEjected = false;
         food.nx = foodPos.x;
@@ -4410,11 +4755,11 @@
       const S = deps3.S;
 
       if (this.isFood && S.foodBatchDraw) return;
+      const invisible = S.invisible || new Set;
       const getSkinImage2 = deps3.getSkinImage || getSkinImage;
       const getOwnedSkinDrawable2 = deps3.getOwnedSkinDrawable || getOwnedSkinDrawable;
       const loadCachedImage2 = deps3.loadCachedImage || loadCachedImage;
       const transparent = S.transparent || new Set;
-      const invisible = S.invisible || new Set;
       const rotation = S.rotation || new Set;
       const skinList = S.skinList || {};
       const simpleRender = true;
@@ -4426,6 +4771,8 @@
       }
       let renderSize = this.size;
       if (renderSize === 0) renderSize = 20;
+      const mass = Math.floor(this.size * this.size * .01);
+      if (!S.gpuBodies) {
       ctx.lineCap = "round";
       ctx.lineJoin = this.isVirus ? "miter" : "round";
       const normalizeNickFn = deps3.normalizeNick || normalizeNick;
@@ -4506,7 +4853,6 @@
             ctx.restore();
           }
       }
-      const mass = Math.floor(this.size * this.size * .01);
       if (typeof this.glowActive === "undefined") this.glowActive = false;
       const glowMass = getLimitGlowMassBounds(S.CONNECTION_URL || S.currentWebSocketUrl || S.wsUrl);
       if (!glowMass) {
@@ -4556,6 +4902,7 @@
             ctx.restore();
           }
         }
+      }
       }
       if (this.id !== 0) {
         const x = this.x;
