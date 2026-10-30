@@ -1657,7 +1657,7 @@
     drawTouch(ctx);
   }
 
-  var FOOD_GL_STRIDE = 7;
+  var FOOD_GL_STRIDE = 6;
   function foodHexRgb(hex) {
     const n = parseInt(String(hex || "").replace("#", ""), 16);
     if (!Number.isFinite(n)) return [1, 1, 1];
@@ -1682,39 +1682,25 @@
     const vert = `
       attribute vec2 aPos;
       attribute float aSize;
-      attribute float aHot;
       attribute vec3 aColor;
       uniform vec2 uCam;
       uniform float uZoom;
       uniform vec2 uScreen;
       varying vec3 vColor;
-      varying float vHot;
       void main() {
         vec2 screen = (aPos - uCam) * uZoom + uScreen * 0.5;
         gl_Position = vec4(screen.x / uScreen.x * 2.0 - 1.0, 1.0 - screen.y / uScreen.y * 2.0, 0.0, 1.0);
-        float d = max(aSize * 2.0 * uZoom, 1.0);
-        if (aHot > 0.5) d *= 1.55;
-        gl_PointSize = d;
+        gl_PointSize = max(aSize * 2.0 * uZoom, 1.0);
         vColor = aColor;
-        vHot = aHot;
       }
     `;
     const frag = `
       precision mediump float;
       varying vec3 vColor;
-      varying float vHot;
       void main() {
         vec2 c = gl_PointCoord - vec2(0.5);
-        float d = length(c);
-        if (d > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.42, 0.5, d);
-        vec3 col = vColor;
-        if (vHot > 0.5) {
-          float ring = smoothstep(0.28, 0.34, d) * (1.0 - smoothstep(0.44, 0.5, d));
-          col = mix(vColor, vec3(1.0), 0.25 + ring * 0.75);
-          alpha = max(alpha, ring);
-        }
-        gl_FragColor = vec4(col, alpha);
+        if (length(c) > 0.5) discard;
+        gl_FragColor = vec4(vColor, 1.0);
       }
     `;
     function shader(type, src) {
@@ -1754,7 +1740,6 @@
       loc: {
         pos: gl.getAttribLocation(prog, "aPos"),
         size: gl.getAttribLocation(prog, "aSize"),
-        hot: gl.getAttribLocation(prog, "aHot"),
         color: gl.getAttribLocation(prog, "aColor"),
         cam: gl.getUniformLocation(prog, "uCam"),
         zoom: gl.getUniformLocation(prog, "uZoom"),
@@ -1768,15 +1753,14 @@
     S._foodGl = gpu;
     return gpu;
   }
-  function foodPointChanged(node, color, hot) {
-    return node._gx !== node.x || node._gy !== node.y || node._gs !== node.size || node._gc !== color || node._gh !== hot;
+  function foodPointChanged(node, color) {
+    return node._gx !== node.x || node._gy !== node.y || node._gs !== node.size || node._gc !== color;
   }
-  function rememberFoodPoint(node, color, hot) {
+  function rememberFoodPoint(node, color) {
     node._gx = node.x;
     node._gy = node.y;
     node._gs = node.size;
     node._gc = color;
-    node._gh = hot;
   }
   function drawFoodArcs(ctx, foods) {
     const buckets = new Map();
@@ -1823,16 +1807,15 @@
         node._posFrame = frameId;
       }
       node.drawTime = ts;
-      const hot = node.isExperimentalFood ? 1 : 0;
       const color = typeof node.getEffectiveColor === "function" ? node.getEffectiveColor() : node.color || "#FFFFFF";
       node._foodColor = color;
-      const screenD = Math.max((node.size || 20) * 2 * zoom * (hot ? 1.55 : 1), 1);
+      const screenD = Math.max((node.size || 20) * 2 * zoom, 1);
       if (!gpuTry || screenD > maxPoint) {
         if (!node.shouldRender()) continue;
         arcFood.push(node);
         continue;
       }
-      if (foodPointChanged(node, color, hot)) dirty = true;
+      if (foodPointChanged(node, color)) dirty = true;
       gpuFood.push(node);
     }
     let drawn = 0;
@@ -1850,17 +1833,15 @@
         const data = gpu.data;
         for (let i = 0; i < gpuFood.length; i++) {
           const node = gpuFood[i];
-          const hot = node.isExperimentalFood ? 1 : 0;
           const rgb = foodHexRgb(node._foodColor);
           const o = i * FOOD_GL_STRIDE;
           data[o] = node.x;
           data[o + 1] = node.y;
           data[o + 2] = node.size || 20;
-          data[o + 3] = hot;
-          data[o + 4] = rgb[0];
-          data[o + 5] = rgb[1];
-          data[o + 6] = rgb[2];
-          rememberFoodPoint(node, node._foodColor, hot);
+          data[o + 3] = rgb[0];
+          data[o + 4] = rgb[1];
+          data[o + 5] = rgb[2];
+          rememberFoodPoint(node, node._foodColor);
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buf);
         gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, need), gl.DYNAMIC_DRAW);
@@ -1885,10 +1866,8 @@
       gl.vertexAttribPointer(gpu.loc.pos, 2, gl.FLOAT, false, stride, 0);
       gl.enableVertexAttribArray(gpu.loc.size);
       gl.vertexAttribPointer(gpu.loc.size, 1, gl.FLOAT, false, stride, 8);
-      gl.enableVertexAttribArray(gpu.loc.hot);
-      gl.vertexAttribPointer(gpu.loc.hot, 1, gl.FLOAT, false, stride, 12);
       gl.enableVertexAttribArray(gpu.loc.color);
-      gl.vertexAttribPointer(gpu.loc.color, 3, gl.FLOAT, false, stride, 16);
+      gl.vertexAttribPointer(gpu.loc.color, 3, gl.FLOAT, false, stride, 12);
       gl.drawArrays(gl.POINTS, 0, gpuFood.length);
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
