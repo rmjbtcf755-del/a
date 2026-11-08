@@ -2762,10 +2762,34 @@
         S.joinChatTimer = null;
       }
     }
+    function clientSecretValue() {
+      const key = "clientSecret";
+      let value = "";
+      try { value = localStorage.getItem(key) || ""; } catch (e) {}
+      value = String(value).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
+      if (value.length < 8) {
+        const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+        const bytes = new Uint8Array(16);
+        if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+        else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+        value = "";
+        for (let i = 0; i < bytes.length; i++) value += alphabet[bytes[i] % alphabet.length];
+        try { localStorage.setItem(key, value); } catch (e) {}
+      }
+      return value;
+    }
+    function sendClientSecret() {
+      const secret = clientSecretValue();
+      const msg = prepareData(1 + 2 * secret.length);
+      msg.setUint8(0, 115);
+      for (let i = 0; i < secret.length; i++) msg.setUint16(1 + 2 * i, secret.charCodeAt(i), true);
+      wsSend(msg);
+    }
     function onWsOpen() {
       var _a;
       setConnectVerifyText("Синхронизация с сервером…");
       S.gameHandshakeDone = false;
+      sendClientSecret();
       (_a = hooks.sendAccountToken) == null ? void 0 : _a.call(hooks);
       const [p, key] = encodeHandshake();
       wsSend(p);
