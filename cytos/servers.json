@@ -1,0 +1,37 @@
+{
+  "default": "ffa",
+  "regions": [
+    {
+      "id": "ffa",
+      "name": "FFA",
+      "servers": [
+        { "id": "ffa", "name": "Москва", "mode": "FFA", "host": "ffa.agar.su", "api": "https://ffa.agar.su", "players": 0 },
+        { "id": "exp", "name": "Эксп#1", "mode": "FFA", "host": "ffa.agar.su:6001", "api": "https://ffa.agar.su:6001", "players": 0 }
+      ]
+    },
+    {
+      "id": "megasplit",
+      "name": "MegaSplit",
+      "servers": [
+        { "id": "ms", "name": "ms#1", "mode": "MEGASPLIT", "host": "ms.agar.su:6001", "api": "https://ms.agar.su:6001", "players": 0 }
+      ]
+    },
+    {
+      "id": "pvp",
+      "name": "PVP",
+      "servers": [
+        { "id": "pvp1", "name": "1x1 ffa 1k", "mode": "PVP", "host": "ms.agar.su:6004", "api": "https://ms.agar.su:6004", "players": 0 },
+        { "id": "pvp2", "name": "2x2 ms 1k", "mode": "PVP", "host": "ms.agar.su:6005", "api": "https://ms.agar.su:6005", "players": 0 }
+      ]
+    },
+    {
+      "id": "tournament",
+      "name": "Tournament",
+      "servers": [
+        { "id": "tournament", "name": "2x2 ffa 10k", "mode": "TOURNAMENT", "host": "ms.agar.su:6002", "api": "https://ms.agar.su:6002", "players": 0 },
+        { "id": "tournament2", "name": "3x3 ffa 10k", "mode": "TOURNAMENT", "host": "ms.agar.su:6003", "api": "https://ms.agar.su:6003", "players": 0 },
+        { "id": "tournament3", "name": "4x4 ffa 10k", "mode": "TOURNAMENT", "host": "ms.agar.su:6006", "api": "https://ms.agar.su:6006", "players": 0 }
+      ]
+    }
+  ]
+}
