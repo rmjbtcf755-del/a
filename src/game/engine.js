@@ -6498,6 +6498,7 @@
   var OFFICIAL_SERVERS = [
     { id: "ffa", host: "ffa.agar.su", wins: false },
     { id: "exp", host: "ffa.agar.su:6001", wins: false },
+    { id: "cs", host: "ms.agar.su:443", wins: false },
     { id: "ms", host: "ms.agar.su:6001", wins: false },
     { id: "pvp1", host: "ms.agar.su:6004", wins: true },
     { id: "pvp2", host: "ms.agar.su:6005", wins: true },
