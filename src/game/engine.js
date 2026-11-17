@@ -366,11 +366,17 @@
     writeSessionEntry(url, text, at);
     return text;
   }
+  function fetchWithTimeout(url, opts = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, Object.assign({}, opts, { signal: controller.signal }))
+    .finally(() => clearTimeout(timer));
+}
   function fetchStaticText(url, force = false) {
     if (NO_CACHE_URLS.has(url)) {
       const pending = inflight.get(url);
       if (pending) return pending;
-      const p = fetch(url, { cache: "no-store" }).then(res => {
+      const p = fetch(url).then(res => {
         if (!res.ok) throw new Error(`fetch failed: ${url} (${res.status})`);
         return res.text();
       }).catch(err => {
@@ -430,10 +436,15 @@
       obj
     };
   }
-  async function loadSkinListMap(force = false) {
+async function loadSkinListMap(force = false) {
+  try {
     const text = await fetchStaticText(STATIC_URLS.skinlist, force);
     return parseSkinListText(text);
+  } catch (e) {
+    console.error("loadSkinListMap:", e);
+    return { map: new Map(), obj: {} };
   }
+}
   function parseStickerListText(data) {
     const map = new Map;
     const obj = {};
@@ -453,22 +464,27 @@
       obj
     };
   }
-  async function loadStickerListMap(force = false) {
+async function loadStickerListMap(force = false) {
+  try {
     const text = await fetchStaticText(STATIC_URLS.stickerlist, force);
     return parseStickerListText(text);
+  } catch (e) {
+    console.error("loadStickerListMap:", e);
+    return { map: new Map(), obj: {} };
   }
+}
   function applySkinListToState(S, bundle) {
     if (S && (bundle == null ? void 0 : bundle.obj)) S.skinList = bundle.obj;
   }
   function applyStickerListToState(S, bundle) {
     if (S && (bundle == null ? void 0 : bundle.obj)) S.stickerList = bundle.obj;
   }
-  function getStickerPackCode(stickerSource, nick) {
-    const key = normalizeNick(String(nick || "").replace(/<[^>]*>/g, ""));
-    if (!key) return "";
-    if (stickerSource instanceof Map) return stickerSource.get(key) || "";
-    return (stickerSource == null ? void 0 : stickerSource[key]) || "";
-  }
+function getStickerPackCode(stickerSource, nick) {
+  const key = normalizeNick(String(nick || "").replace(/<[^>]*>/g, ""));
+  if (!key || !stickerSource) return "";
+  if (stickerSource instanceof Map) return stickerSource.get(key) || "";
+  return stickerSource[key] || "";
+}
   function getStickerUrl(stickerSource, nick, stickerId) {
     const id = Number(stickerId);
     if (!Number.isFinite(id) || id < 1 || id > 9) return "";
@@ -476,12 +492,12 @@
     if (code) return `${STICKER_CDN}/${encodeURIComponent(code)}/${id}.png`;
     return `${STICKER_CDN}/${id}.png`;
   }
-  function getSkinIdForNick(skinSource, nick, fallback = "PPFtwqH") {
-    const key = normalizeNick(String(nick || "").replace(/<[^>]*>/g, ""));
-    if (!key) return fallback;
-    if (skinSource instanceof Map) return skinSource.get(key) || fallback;
-    return (skinSource == null ? void 0 : skinSource[key]) || fallback;
-  }
+function getSkinIdForNick(skinSource, nick, fallback = "PPFtwqH") {
+  const key = normalizeNick(String(nick || "").replace(/<[^>]*>/g, ""));
+  if (!key || !skinSource) return fallback;
+  if (skinSource instanceof Map) return skinSource.get(key) || fallback;
+  return skinSource[key] || fallback;
+}
   function getSkinUrlForNick(skinSource, nick, fallback = "4") {
     const id = getSkinIdForNick(skinSource, nick, fallback);
     return `https://api.agar.su/skins/${id}.png`;
@@ -492,11 +508,14 @@
   function toLowerSet(text) {
     return new Set(String(text || "").split("\n").map(l => l.trim().toLowerCase().replace(/ё/g, "е")).filter(Boolean));
   }
-  async function loadPassData(force = false) {
-    const [text, banText] = await Promise.all([
+async function loadPassData(force = false) {
+  try {
+    const results = await Promise.allSettled([
       fetchStaticText(STATIC_URLS.pass, force),
-      fetchStaticText(STATIC_URLS.bannick, force).catch(() => "")
+      fetchStaticText(STATIC_URLS.bannick, force)
     ]);
+    const text = results[0].status === "fulfilled" ? results[0].value : "";
+    const banText = results[1].status === "fulfilled" ? results[1].value : "";
     const banned = new Set();
     for (const line of String(banText || "").split("\n")) {
       const norm = normalizeNick(line.trim());
@@ -506,7 +525,7 @@
     const passClanNickToId = new Map;
     const passUsers = [];
     let lineNum = 0;
-    for (const line of text.split("\n")) {
+    for (const line of String(text || "").split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
       lineNum += 1;
@@ -520,18 +539,20 @@
       }
       if (!banned.has(norm)) passUsers.push(norm);
     }
-    return {
-      passUsers,
-      passPlayerNickToId,
-      passClanNickToId
-    };
+    return { passUsers, passPlayerNickToId, passClanNickToId };
+  } catch (e) {
+    console.error("loadPassData:", e);
+    return { passUsers: [], passPlayerNickToId: new Map(), passClanNickToId: new Map() };
   }
-  async function loadInvisibleSet(force = false) {
-    return toLowerSet(await fetchStaticText(STATIC_URLS.invisible, force));
-  }
-  async function loadRotationSet(force = false) {
-    return toLowerSet(await fetchStaticText(STATIC_URLS.rotation, force));
-  }
+}
+async function loadInvisibleSet(force = false) {
+  try { return toLowerSet(await fetchStaticText(STATIC_URLS.invisible, force)); }
+  catch (e) { return new Set(); }
+}
+async function loadRotationSet(force = false) {
+  try { return toLowerSet(await fetchStaticText(STATIC_URLS.rotation, force)); }
+  catch (e) { return new Set(); }
+}
   async function loadStatsBgMap(force = false) {
     const text = await fetchStaticText(STATIC_URLS.statsbglist, force).catch(() => "");
     const map = {};
@@ -550,20 +571,29 @@
     const file = (statsBgMap && (statsBgMap[lower] || statsBgMap[clean] || statsBgMap[`[${clean}]`])) || null;
     return file ? `https://api.agar.su/statsbg/${file}` : null;
   }
-  async function loadBadWordsSet(force = false) {
-    return toLowerSet(await fetchStaticText(STATIC_URLS.word, force));
-  }
-  async function preloadStaticLists(force = false) {
-    const [skin, sticker, pass, invisible, rotation, words] = await Promise.all([ loadSkinListMap(force), loadStickerListMap(force), loadPassData(force), loadInvisibleSet(force), loadRotationSet(force), loadBadWordsSet(force) ]);
-    return {
-      skin,
-      sticker,
-      pass,
-      invisible,
-      rotation,
-      words
-    };
-  }
+async function loadBadWordsSet(force = false) {
+  try { return toLowerSet(await fetchStaticText(STATIC_URLS.word, force)); }
+  catch (e) { return new Set(); }
+}
+async function preloadStaticLists(force = false) {
+  const results = await Promise.allSettled([
+    loadSkinListMap(force),
+    loadStickerListMap(force),
+    loadPassData(force),
+    loadInvisibleSet(force),
+    loadRotationSet(force),
+    loadBadWordsSet(force)
+  ]);
+  const pick = (i, fallback) => results[i].status === "fulfilled" ? results[i].value : fallback;
+  return {
+    skin: pick(0, { map: new Map(), obj: {} }),
+    sticker: pick(1, { map: new Map(), obj: {} }),
+    pass: pick(2, { passUsers: [], passPlayerNickToId: new Map(), passClanNickToId: new Map() }),
+    invisible: pick(3, new Set()),
+    rotation: pick(4, new Set()),
+    words: pick(5, new Set())
+  };
+}
   var skinImageCache = new Map;
   function getSkinImageUrl(skinId, fallbackId = "4") {
     const id = skinId && String(skinId).trim() || fallbackId;
@@ -1473,7 +1503,7 @@
       const topPlayer = stat[0];
       topPlayerNick = topPlayer.nick;
       topPlayerScore = topPlayer.score;
-      const skinId = S.skinList[normalizeNick(topPlayer.nick)];
+      const skinId = S.skinList && S.skinList[normalizeNick(topPlayer.nick)];
       const nextSrc = getSkinImageUrl(skinId);
       if (innerImage.dataset.skinSrc !== nextSrc) {
         innerImage.dataset.skinSrc = nextSrc;
@@ -1664,6 +1694,7 @@
     return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
   }
   function ensureFoodGl(S) {
+    try {
     if (S._foodGl) return S._foodGl;
     if (S._foodGlFailed) return null;
     const canvas = document.createElement("canvas");
@@ -1752,6 +1783,11 @@
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     S._foodGl = gpu;
     return gpu;
+    } catch (e) {
+  console.error("ensureFoodGl:", e);
+  S._foodGlFailed = true;
+  return null;
+}
   }
   function foodPointChanged(node, color) {
     return node._gx !== node.x || node._gy !== node.y || node._gs !== node.size || node._gc !== color;
@@ -2231,7 +2267,8 @@
       }
       const tooltip = document.createElement("div");
       tooltip.className = "tooltip";
-      tooltip.textContent = "XP: " + (((_a = S == null ? void 0 : S.leaderBoard[b]) == null ? void 0 : _a.xp) || 0);
+      const _lb = S && S.leaderBoard && S.leaderBoard[b];
+tooltip.textContent = "XP: " + ((_lb && _lb.xp) || 0);
       starContainer.appendChild(tooltip);
       iconsContainer.appendChild(starContainer);
     }
@@ -2469,10 +2506,7 @@
     let res;
     try {
 
-      res = await fetch(apiBase + "/challenge", {
-        cache: "no-store",
-        signal: AbortSignal.timeout(3500)
-      });
+res = await fetchWithTimeout(apiBase + "/challenge", { cache: "no-store" }, 3500);
     } catch (e) {
       return null;
     }
@@ -6380,7 +6414,7 @@
       const hours = monitResolveHours();
       const url = STATS_API + "/api/monit?hours=" + encodeURIComponent(hours) +
         "&servers=" + encodeURIComponent(serverId);
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url);
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       let srv = (data.servers || []).find(s => s.id === serverId) || (data.servers || [])[0] || null;
@@ -10692,7 +10726,7 @@ onReady(() => {
   }
   function loadAllowTxt() {
     if (!allowTxtReady) {
-      allowTxtReady = fetch("https://api.agar.su/allowtxt.txt", { cache: "no-store" }).then(r => {
+      allowTxtReady = fetch("https://api.agar.su/allowtxt.txt").then(r => {
         if (!r.ok) throw new Error("api allowtxt");
         return r.text();
       }).then(text => {
