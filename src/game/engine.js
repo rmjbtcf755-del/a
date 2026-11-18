@@ -6000,7 +6000,7 @@ res = await fetchWithTimeout(apiBase + "/challenge", { cache: "no-store" }, 3500
   var STATS_RECORDS_FEED = STATS_API + "/api/records/feed";
 
   var STATS_FEED_ENABLED = true;
-  var STATS_FEED_POLL_MS = 10000;
+  var STATS_FEED_POLL_MS = 60000;
   var STATS_FEED_STORAGE_KEY = "agar_stats_feed_since";
 
   var monitWidgetState = { hoursMode: "today", hours: 24, loading: false, srv: null, hitPts: [] };
