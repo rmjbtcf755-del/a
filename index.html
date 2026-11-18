@@ -19,13 +19,9 @@
     <meta property="og:url" content="https://agar.su">
     <meta property="og:type" content="website">
     <title data-en="Agar.io - total clone .su" data-tr="Agar.su - Çevrimiçi Oyna" data-zh="Agar.su - 在线游戏" data-ar="Agar.su - العب عبر الإنترنت" data-es="Agar.su - Jugar en línea" data-pl="Agar.su - Graj online" data-de="Agar.su - Online spielen" data-uk="Agar.su - Гра онлайн">Agar.su - Игра Онлайн</title>
-    <link rel="icon" href="./icon.png" type="image/png">
+    <link rel="icon" href="./icon.svg" type="image/png">
     <link rel="canonical" href="https://agar.su">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&family=Roboto:wght@500&family=Ubuntu:wght@700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/css/v4-shims.min.css">
+    <link rel="stylesheet" href="./fonts/fonts.css">
     <style>
 :root {
     --vs-primary: 29 92 255;
@@ -9498,21 +9494,6 @@ html.reduce-motion .overlays *::after {
   scroll-behavior: auto !important;
 }
 
-.material-symbols-outlined {
-  font-family: 'Material Symbols Outlined';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  -webkit-font-feature-settings: 'liga';
-  -webkit-font-smoothing: antialiased;
-}
 
 </style>
     <style>html,body{background:#070c16}</style>
@@ -13806,6 +13787,43 @@ async function preloadStaticLists(force = false) {
   };
 }
   var skinImageCache = new Map;
+  var persistentImgStore = null;
+  function getPersistentImgStore() {
+    if (persistentImgStore !== null) return persistentImgStore;
+    try {
+      if (typeof caches !== "undefined" && caches && caches.open) {
+        persistentImgStore = caches.open("agarsu-img-v1").catch(() => null);
+      } else {
+        persistentImgStore = Promise.resolve(null);
+      }
+    } catch (e) {
+      persistentImgStore = Promise.resolve(null);
+    }
+    return persistentImgStore;
+  }
+  function loadPersistentImage(requestUrl, cacheKey) {
+    const isHttp = /^https?:/i.test(cacheKey);
+    return getPersistentImgStore().then(store => {
+      const doFetch = () => fetch(requestUrl, {
+        cache: "no-store"
+      }).then(res => {
+        if (!res.ok) throw new Error("image fetch " + res.status);
+        if (isHttp && store) {
+          try {
+            store.put(cacheKey, res.clone()).catch(() => {});
+          } catch (e) {}
+        }
+        return res.blob();
+      });
+      if (!isHttp || !store) return doFetch();
+      return store.match(cacheKey).then(cached => {
+        if (cached) {
+          return cached.blob().catch(() => doFetch());
+        }
+        return doFetch();
+      }).catch(() => doFetch());
+    }).then(blob => URL.createObjectURL(blob));
+  }
   function getSkinImageUrl(skinId, fallbackId = "4") {
     const id = skinId && String(skinId).trim() || fallbackId;
     return `${SKIN_CDN}/${id}.png`;
@@ -13833,7 +13851,6 @@ async function preloadStaticLists(force = false) {
     const fetchUrl = bustRetry
       ? url + (url.indexOf("?") >= 0 ? "&" : "?") + "_=" + Date.now()
       : url;
-    const resolved = resolveAssetUrl(fetchUrl);
     const entry = skinImageCache.get(baseKey);
     if (entry instanceof Image) return entry;
     if (entry === "error") {
@@ -13842,10 +13859,8 @@ async function preloadStaticLists(force = false) {
     }
     const img = new Image;
     img.decoding = "async";
-    img.crossOrigin = "anonymous";
     skinImageCache.set(baseKey, img);
-    img.onload = () => skinImageCache.set(baseKey, img);
-    img.onerror = () => {
+    const onFail = () => {
       if (!bustRetry) {
         skinImageCache.delete(baseKey);
         loadCachedImage(url, true);
@@ -13854,7 +13869,11 @@ async function preloadStaticLists(force = false) {
       skinImageCache.set(baseKey, "error");
       if (baseKey !== skinImageCacheKey(SKIN_FALLBACK_URL)) loadCachedImage(SKIN_FALLBACK_URL);
     };
-    img.src = resolved;
+    loadPersistentImage(resolveAssetUrl(fetchUrl), baseKey).then(src => {
+      img.onload = () => skinImageCache.set(baseKey, img);
+      img.onerror = onFail;
+      img.src = src;
+    }).catch(onFail);
     return img;
   }
 
