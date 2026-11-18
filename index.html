@@ -13509,7 +13509,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
   var STICKERLIST_URL = "https://api.agar.su/stickerlist.txt";
   var SKIN_CDN = "https://api.agar.su/skins";
   var STICKER_CDN = "https://api.agar.su/stickers";
-  var SKIN_FALLBACK_URL = "https://api.agar.su/skins/4.png";
+  var SKIN_FALLBACK_URL = "/photo/PPFtwqH.png";
   var WS_SUBPROTOCOL = "eSejeKSVdysQvZs0ES1H";
   var TTL_MS = 18e5;
   var STATIC_URLS = {
@@ -20222,7 +20222,7 @@ function updateRegionOnlineTotals(totals) {
     if (!players.length) {
       const empty = document.createElement("div");
       empty.className = "rating-row";
-      empty.innerHTML = `<div></div><div>—</div><div class="rating-pts">0 очков</div><div class="avatar" style="background-image:url('https://api.agar.su/skins/4.png');"></div>`;
+      empty.innerHTML = `<div></div><div>—</div><div class="rating-pts">0 очков</div><div class="avatar" style="background-image:url('/photo/PPFtwqH.png');"></div>`;
       container.appendChild(empty);
     } else {
       players.forEach((p, i) => container.appendChild(createRow(p.nick, p.points, i, p.id, false)));
@@ -20243,7 +20243,7 @@ function updateRegionOnlineTotals(totals) {
     if (!clans.length) {
       const empty = document.createElement("div");
       empty.className = "rating-row";
-      empty.innerHTML = `<div></div><div>—</div><div class="rating-pts">0 очков</div><div class="avatar" style="background-image:url('https://api.agar.su/skins/4.png');"></div>`;
+      empty.innerHTML = `<div></div><div>—</div><div class="rating-pts">0 очков</div><div class="avatar" style="background-image:url('/photo/PPFtwqH.png');"></div>`;
       container.appendChild(empty);
     } else {
       clans.forEach((c, i) => container.appendChild(createRow(c.clan, c.points, i, c.id, true)));
@@ -21689,7 +21689,7 @@ function updateRegionOnlineTotals(totals) {
       messageContent = privateMatch[2];
       if (messageContent.startsWith("PvPInvite;")) return;
       targetDialogId = `!ls${number}`;
-      createDialog(S, hooks, number, lastMessage.name, S.skinList[normalizedName] ? `https://api.agar.su/skins/${S.skinList[normalizedName]}.png` : "https://api.agar.su/skins/4.png");
+      createDialog(S, hooks, number, lastMessage.name, S.skinList[normalizedName] ? `https://api.agar.su/skins/${S.skinList[normalizedName]}.png` : "/photo/PPFtwqH.png");
       targetDiv = ((_b = S.dialogs[targetDialogId]) == null ? void 0 : _b.div) || targetDiv;
     }
     if (messageContent.startsWith("PvPInvite;")) return;
@@ -22018,7 +22018,7 @@ function updateRegionOnlineTotals(totals) {
     menuItems.push({
       label: "Личное сообщение",
       onClick: () => {
-        createDialog(S, hooks, playerId, lastMessage.name, S.skinList[normalizeNick(lastMessage.name)] ? `https://api.agar.su/skins/${S.skinList[normalizeNick(lastMessage.name)]}.png` : "https://api.agar.su/skins/4.png");
+        createDialog(S, hooks, playerId, lastMessage.name, S.skinList[normalizeNick(lastMessage.name)] ? `https://api.agar.su/skins/${S.skinList[normalizeNick(lastMessage.name)]}.png` : "/photo/PPFtwqH.png");
         switchToDialog(S, `!ls${playerId}`);
       }
     });
