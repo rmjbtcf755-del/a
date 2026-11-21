@@ -2,199 +2,488 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Ping Test — ffa.agar.su</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ping-test@ffa.agar.su</title>
 <style>
+  :root {
+    --bg:      #000000;
+    --bg-bar:  #0a0a0a;
+    --bg-alt:  #050505;
+    --fg:      #c8c8c8;
+    --fg-dim:  #555555;
+    --fg-mid:  #888888;
+    --green:   #00ff41;
+    --green-d: #00a828;
+    --amber:   #ffb000;
+    --red:     #ff3b3b;
+    --cyan:    #00d4ff;
+    --magenta: #ff5fff;
+    --border:  #1f1f1f;
+    --border2: #333333;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
   html, body {
     margin: 0; padding: 0;
-    background: #000; color: #fff;
-    font-family: 'Consolas', 'Monaco', monospace;
-    overflow: hidden; height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', 'Liberation Mono', monospace;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow: hidden;
+    height: 100vh;
+    height: 100dvh;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
   }
-  #wrap { display: flex; flex-direction: column; height: 100vh; }
 
+  #terminal {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    padding: 6px;
+    gap: 6px;
+  }
+
+  /* ============ TITLE BAR ============ */
+  #titlebar {
+    background: var(--green-d);
+    color: #000;
+    padding: 3px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+  #titlebar .left::before { content: '┌─ '; opacity: 0.6; }
+  #titlebar .right::after { content: ' ─┐'; opacity: 0.6; }
+  #titlebar .right { font-weight: 400; opacity: 0.85; }
+
+  /* ============ HUD ============ */
   #hud {
-    padding: 8px 16px;
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 14px; border-bottom: 1px solid #222; background: #000;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    border: 1px solid var(--border2);
+    background: var(--bg-alt);
+    flex-shrink: 0;
   }
-  #hud .stat { margin-right: 22px; }
-  .label { color: #777; }
-  .val { font-weight: bold; }
-  .red    { color: #ff3b3b; }
-  .blue   { color: #3b8dff; }
-  .yellow { color: #ffd23b; }
-  .green  { color: #3bff6b; }
+  .hud-cell {
+    padding: 6px 10px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .hud-cell:last-child { border-right: none; }
+  .hud-label {
+    font-size: 10px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .hud-val {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hud-val .unit { font-size: 10px; color: var(--fg-dim); margin-left: 2px; font-weight: 400; }
+  .v-blue   { color: var(--cyan); }
+  .v-green  { color: var(--green); }
+  .v-yellow { color: var(--amber); }
+  .v-red    { color: var(--red); }
+  .v-purple { color: var(--magenta); }
 
-  #main { flex: 1; display: flex; position: relative; min-height: 0; }
-
-  #graph-col { flex: 1; position: relative; min-width: 0; }
-  canvas#graph { display: block; width: 100%; height: 100%; }
-
-  #side {
-    width: 320px; border-left: 1px solid #222;
-    display: flex; flex-direction: column;
+  /* ============ CHART ============ */
+  #chart-wrap {
+    flex: 1;
+    position: relative;
+    border: 1px solid var(--border2);
     background: #000;
+    min-height: 0;
+    overflow: hidden;
   }
-  #info-wrap { padding: 16px; }
-  #infoTitle { font-size: 12px; color: #666; margin-bottom: 14px; letter-spacing: 1px; }
-  #info { font-size: 14px; line-height: 1.8; }
-  #info .row { margin-bottom: 14px; }
-  #info .who { color: #777; font-size: 12px; letter-spacing: 1px; }
-  #info .city { font-size: 18px; font-weight: bold; }
-  #info .cityServ { color: #ff3b3b; }
-  #info .cityCli  { color: #3b8dff; }
-  #info .country { color: #555; font-size: 12px; margin-left: 6px; }
-  #info .ip { color: #444; font-size: 12px; display: block; margin-top: 2px; }
-
-  #legend {
-    position: absolute; top: 10px; left: 16px; font-size: 12px;
+  #chart-wrap::before {
+    content: '┌─[ RTT GRAPH ]' attr(data-axis) '─┐';
+    position: absolute;
+    top: -8px;
+    left: 8px;
+    background: var(--bg);
+    padding: 0 6px;
+    font-size: 10px;
+    color: var(--fg-dim);
+    z-index: 2;
+    letter-spacing: 0.05em;
   }
-  #legend span { margin-right: 14px; }
-  #legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-
-  #status {
-    padding: 6px 16px; font-size: 12px; color: #666;
-    border-top: 1px solid #222;
+  canvas#chart {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 
-  #startOverlay {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    pointer-events: none; z-index: 50;
-    transition: opacity 0.45s ease;
+  #chart-meta {
+    position: absolute;
+    top: 6px;
+    left: 10px;
+    font-size: 10px;
+    color: var(--fg-mid);
+    display: flex;
+    gap: 12px;
+    pointer-events: none;
+    z-index: 3;
+    background: rgba(0,0,0,0.75);
+    padding: 2px 6px;
+    border: 1px solid var(--border);
   }
-  #startOverlay.hidden { opacity: 0; pointer-events: none; }
-  #startBtn {
-    pointer-events: auto;
-    width: 150px; height: 150px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 30% 30%, #1a3a7a, #0a1020);
-    border: 3px solid #3b8dff;
-    color: #3b8dff;
-    font-family: inherit;
-    font-size: 22px; font-weight: bold; letter-spacing: 2px;
-    cursor: pointer;
-    box-shadow: 0 0 30px rgba(59,141,255,0.6), inset 0 0 30px rgba(59,141,255,0.25);
-    transition: transform 0.4s cubic-bezier(.4,0,.6,1),
-                box-shadow 0.2s, border-color 0.2s, color 0.2s, opacity 0.4s;
-    outline: none;
-  }
-  #startOverlay.hidden #startBtn { transform: scale(0.4); opacity: 0; }
-  #startBtn:hover:not(:disabled) {
-    box-shadow: 0 0 55px rgba(59,141,255,0.9), inset 0 0 40px rgba(59,141,255,0.4);
-  }
-  #startBtn:active:not(:disabled) {
-    transform: scale(0.92);
-    box-shadow: 0 0 70px rgba(59,141,255,1), inset 0 0 60px rgba(59,141,255,0.7);
-  }
-  #startBtn:disabled {
-    cursor: not-allowed;
-    border-color: #ffd23b; color: #ffd23b;
-    background: radial-gradient(circle at 30% 30%, #3a3000, #100a00);
-    box-shadow: 0 0 30px rgba(255,210,59,0.5), inset 0 0 30px rgba(255,210,59,0.2);
-  }
-  #startBtn .small {
-    display: block; font-size: 11px; font-weight: normal;
-    letter-spacing: 0; margin-top: 4px; color: #888;
-  }
+  #chart-meta .k { color: var(--fg-dim); }
 
   #countdown {
-    position: absolute; top: 10px; right: 16px;
-    font-size: 22px; color: #ffd23b; font-weight: bold;
-    text-shadow: 0 0 6px #ffd23b; z-index: 10;
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--amber);
+    z-index: 3;
+    background: rgba(0,0,0,0.75);
+    padding: 2px 8px;
+    border: 1px solid var(--amber);
+    letter-spacing: 0.05em;
+  }
+
+  /* ============ START BUTTON ============ */
+  #startOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    background: rgba(0,0,0,0.55);
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  #startOverlay.hidden { opacity: 0; pointer-events: none; }
+
+  #startBtn {
+    pointer-events: auto;
+    background: #000;
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 14px 32px;
+    cursor: pointer;
+    letter-spacing: 0.15em;
+    position: relative;
+    text-transform: uppercase;
+    outline: none;
+    box-shadow: 0 0 0 1px #000 inset, 0 0 12px rgba(0,255,65,0.15);
+    transition: none;
+  }
+  #startBtn::before {
+    content: '┌';
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    color: var(--green);
+    font-size: 10px;
+    line-height: 1;
+  }
+  #startBtn::after {
+    content: '┐';
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    color: var(--green);
+    font-size: 10px;
+    line-height: 1;
+  }
+  #startBtn:hover:not(:disabled) {
+    background: var(--green);
+    color: #000;
+  }
+  #startBtn:active:not(:disabled) {
+    background: var(--green-d);
+    color: #000;
+  }
+  #startBtn:disabled {
+    border-color: var(--fg-dim);
+    color: var(--fg-dim);
+    cursor: not-allowed;
+  }
+  #startBtn .small {
+    display: block;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+    color: var(--fg-mid);
+  }
+  #startBtn:hover .small { color: #000; }
+
+  /* ============ BOTTOM PANEL ============ */
+  #bottom {
+    border: 1px solid var(--border2);
+    background: var(--bg-alt);
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 44vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+    position: relative;
+  }
+  #bottom::before {
+    content: '┌─[ INFO ]─────┐';
+    position: absolute;
+    top: -8px;
+    left: 8px;
+    background: var(--bg);
+    padding: 0 6px;
+    font-size: 10px;
+    color: var(--fg-dim);
+    letter-spacing: 0.05em;
+  }
+
+  /* route */
+  #route {
+    font-size: 13px;
+    color: var(--fg);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding-top: 4px;
+  }
+  #route .lbl { color: var(--fg-dim); }
+  #route .you  { color: var(--cyan); font-weight: 700; }
+  #route .srv  { color: var(--red); font-weight: 700; }
+  #route .arrow { color: var(--amber); }
+  #route .ip { color: var(--fg); }
+
+  /* verdict */
+  #verdict {
+    font-size: 12px;
+    padding: 6px 0;
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    line-height: 1.5;
+  }
+  #verdict .tag {
+    display: inline-block;
+    padding: 0 6px;
+    margin-right: 8px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  #verdict.ok   .tag { background: var(--green-d); color: #000; }
+  #verdict.warn .tag { background: var(--amber);   color: #000; }
+  #verdict.bad  .tag { background: var(--red);     color: #000; }
+  #verdict .title { font-weight: 700; }
+  #verdict.ok   .title { color: var(--green); }
+  #verdict.warn .title { color: var(--amber); }
+  #verdict.bad  .title { color: var(--red); }
+  #verdict .detail {
+    color: var(--fg-mid);
+    display: block;
+    margin-top: 3px;
+    padding-left: 0;
+  }
+  #verdict .detail::before { content: '  → '; color: var(--fg-dim); }
+
+  /* status */
+  #status {
+    font-size: 11px;
+    color: var(--fg-dim);
+    padding-top: 2px;
+  }
+  #status::before { content: '$ '; color: var(--green); }
+
+  /* ============ TOOLTIP ============ */
+  #chart-tooltip {
+    position: absolute;
+    background: #000;
+    border: 1px solid var(--green-d);
+    padding: 4px 8px;
+    font-size: 11px;
+    pointer-events: none;
+    display: none;
+    z-index: 20;
+    white-space: nowrap;
+    color: var(--fg);
+    font-family: inherit;
+  }
+  #chart-tooltip .t-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  #chart-tooltip .t-label { color: var(--fg-dim); }
+
+  /* ============ MOBILE ============ */
+  @media (max-width: 640px) {
+    html, body { font-size: 12px; }
+    .hud-cell { padding: 5px 6px; }
+    .hud-label { font-size: 9px; }
+    .hud-val { font-size: 14px; }
+    #startBtn { font-size: 13px; padding: 11px 22px; }
+    #bottom { padding: 6px 8px; max-height: 48vh; }
+    #route { font-size: 12px; }
+    #verdict { font-size: 11px; }
+    #chart-meta { font-size: 9px; gap: 8px; }
+    #countdown { font-size: 13px; }
+    #chart-wrap::before, #bottom::before { font-size: 9px; }
+  }
+
+  @media (max-width: 380px) {
+    .hud-label { font-size: 8px; }
+    .hud-val { font-size: 12px; }
+    #titlebar { font-size: 11px; }
   }
 </style>
 </head>
 <body>
-<div id="wrap">
+
+<div id="terminal">
+
+  <div id="titlebar">
+    <span class="left">ping-test@ffa.agar.su</span>
+    <span class="right">tty0 · 5min</span>
+  </div>
+
   <div id="hud">
-    <div>
-      <span class="stat"><span class="label">PING</span> <span id="curPing" class="val">—</span><span class="label">ms</span></span>
-      <span class="stat"><span class="label">AVG</span> <span id="avgPing" class="val blue">—</span></span>
-      <span class="stat"><span class="label">MIN</span> <span id="minPing" class="val green">—</span></span>
-      <span class="stat"><span class="label">MAX</span> <span id="maxPing" class="val red">—</span></span>
-      <span class="stat"><span class="label">LOSS</span> <span id="lossPct" class="val yellow">0%</span></span>
+    <div class="hud-cell">
+      <div class="hud-label">PING</div>
+      <div class="hud-val v-blue"   id="curPing">—<span class="unit">ms</span></div>
+    </div>
+    <div class="hud-cell">
+      <div class="hud-label">AVG</div>
+      <div class="hud-val v-yellow" id="avgPing">—</div>
+    </div>
+    <div class="hud-cell">
+      <div class="hud-label">MIN</div>
+      <div class="hud-val v-green"  id="minPing">—</div>
+    </div>
+    <div class="hud-cell">
+      <div class="hud-label">MAX</div>
+      <div class="hud-val v-red"    id="maxPing">—</div>
+    </div>
+    <div class="hud-cell">
+      <div class="hud-label">LOSS</div>
+      <div class="hud-val v-purple" id="lossPct">0.0<span class="unit">%</span></div>
     </div>
   </div>
 
-  <div id="main">
-    <div id="graph-col">
-      <canvas id="graph"></canvas>
-      <div id="legend">
-        <span><span class="dot" style="background:#3b8dff"></span>ping</span>
-        <span><span class="dot" style="background:#3bff6b"></span>min</span>
-        <span><span class="dot" style="background:#ffd23b"></span>avg</span>
-        <span><span class="dot" style="background:#ff3b3b"></span>max</span>
-      </div>
-      <div id="countdown" style="display:none"></div>
-      <div id="startOverlay">
-        <button id="startBtn">СТАРТ<span class="small">5 минут</span></button>
-      </div>
+  <div id="chart-wrap" data-axis="">
+    <canvas id="chart"></canvas>
+    <div id="chart-meta">
+      <span><span class="k">─</span> ping</span>
+      <span style="color:var(--green)">─ min</span>
+      <span style="color:var(--amber)">─ avg</span>
+      <span style="color:var(--red)">─ max</span>
     </div>
-
-    <div id="side">
-      <div id="info-wrap">
-        <div id="infoTitle">СЕРВЕР / ИГРОК</div>
-        <div id="info">
-          <div class="row">
-            <div class="who">СЕРВЕР</div>
-            <div><span id="srvCity" class="city cityServ">—</span><span id="srvCountry" class="country"></span></div>
-            <span id="srvIp" class="ip"></span>
-          </div>
-          <div class="row">
-            <div class="who">ИГРОК</div>
-            <div><span id="cliCity" class="city cityCli">—</span><span id="cliCountry" class="country"></span></div>
-            <span id="cliIp" class="ip"></span>
-          </div>
-        </div>
-      </div>
+    <div id="countdown" style="display:none">05:00</div>
+    <div id="chart-tooltip"></div>
+    <div id="startOverlay">
+      <button id="startBtn">
+        [ START ]
+        <span class="small">5 MIN TEST</span>
+      </button>
     </div>
   </div>
 
-  <div id="status">Готов к запуску. Нажмите СТАРТ.</div>
+  <div id="bottom">
+    <div id="route">
+      <span class="lbl">you:</span>
+      <span class="you" id="cliIp">—</span>
+      <span class="arrow">──ping──→</span>
+      <span class="lbl">server:</span>
+      <span class="srv" id="srvIp">ffa.agar.su</span>
+    </div>
+
+    <div id="verdict" class="ok">
+      <span class="tag">IDLE</span>
+      <span class="title">Ready</span>
+      <span class="detail">нажми START — 5-минутный замер пинга и диагностика</span>
+    </div>
+
+    <div id="status">awaiting input</div>
+  </div>
+
 </div>
 
 <script>
 (() => {
-  const canvas = document.getElementById('graph');
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('chart');
   const ctx = canvas.getContext('2d');
+  const tooltip = $('chart-tooltip');
 
-  const elCur = document.getElementById('curPing');
-  const elAvg = document.getElementById('avgPing');
-  const elMin = document.getElementById('minPing');
-  const elMax = document.getElementById('maxPing');
-  const elLoss = document.getElementById('lossPct');
-  const elCountdown = document.getElementById('countdown');
-  const elStatus = document.getElementById('status');
-  const btnStart = document.getElementById('startBtn');
-  const startOverlay = document.getElementById('startOverlay');
-
-  const elSrvCity = document.getElementById('srvCity');
-  const elSrvCountry = document.getElementById('srvCountry');
-  const elSrvIp = document.getElementById('srvIp');
-  const elCliCity = document.getElementById('cliCity');
-  const elCliCountry = document.getElementById('cliCountry');
-  const elCliIp = document.getElementById('cliIp');
+  const elCur = $('curPing');
+  const elAvg = $('avgPing');
+  const elMin = $('minPing');
+  const elMax = $('maxPing');
+  const elLoss = $('lossPct');
+  const elCountdown = $('countdown');
+  const elStatus = $('status');
+  const btnStart = $('startBtn');
+  const startOverlay = $('startOverlay');
+  const elSrvIp = $('srvIp');
+  const elCliIp = $('cliIp');
+  const verdict = $('verdict');
+  const chartWrap = $('chart-wrap');
 
   const WS_URL = 'wss://ffa.agar.su:8443/';
-  let ws = null;
+  const TEST_DURATION = 5 * 60 * 1000;
+  const PING_INTERVAL = 200;
+  const MAX_POINTS = 1600;
 
+  const COLORS = {
+    ping: '#00d4ff',
+    min:  '#00ff41',
+    avg:  '#ffb000',
+    max:  '#ff3b3b',
+    loss: '#ff5fff',
+    grid: '#141414',
+    axis: '#222',
+  };
+
+  let ws = null;
+  let running = false;
+  let startTime = 0;
+  let pingId = 0;
+  let pendingPings = new Map();
+  let dataPoints = [];
+  let stats = { sent: 0, recv: 0, sum: 0, min: Infinity, max: 0, jitterSum: 0, jitterN: 0, lastRtt: null };
+  let lastPing = null;
+  let mouseX = null;
+
+  // ===== WS =====
   function connectWS() {
     return new Promise((resolve, reject) => {
       ws = new WebSocket(WS_URL);
       ws.onopen = () => resolve(ws);
       ws.onerror = (e) => reject(e);
-      ws.onclose = () => { elStatus.textContent = 'WebSocket закрыт.'; };
+      ws.onclose = () => { elStatus.textContent = 'connection closed'; };
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);
-          if (msg.type === 'geo') {
-            elSrvCity.textContent = msg.server.city || 'Unknown';
-            elSrvCountry.textContent = msg.server.country ? ' / ' + msg.server.country : '';
-            elSrvIp.textContent = msg.server.ip || '';
-            elCliCity.textContent = msg.client.city || 'Unknown';
-            elCliCountry.textContent = msg.client.country ? ' / ' + msg.client.country : '';
-            elCliIp.textContent = msg.client.ip || '';
+          if (msg.type === 'hello') {
+            if (msg.server?.ip) elSrvIp.textContent = msg.server.ip;
+            if (msg.client?.ip) elCliIp.textContent = msg.client.ip;
           } else if (msg.type === 'pong') {
             onPong(msg);
           }
@@ -203,34 +492,92 @@
     });
   }
 
-  const TEST_DURATION = 5 * 60 * 1000;
-  const PING_INTERVAL = 200;
-  const MAX_POINTS = 3000;
-
-  let dataPoints = [];
-  let running = false;
-  let startTime = 0;
-  let pingId = 0;
-  let pendingPings = new Map();
-  let stats = { sent: 0, recv: 0, sum: 0, min: Infinity, max: 0 };
-  let lastPing = null;
-
+  // ===== HUD =====
   function fmt(v) {
     if (v === Infinity || v === null || v === undefined) return '—';
     return Math.round(v);
   }
-
+  function setHud(el, value, unit) {
+    el.innerHTML = '';
+    el.appendChild(document.createTextNode(String(value)));
+    if (unit) {
+      const s = document.createElement('span');
+      s.className = 'unit';
+      s.textContent = unit;
+      el.appendChild(s);
+    }
+  }
   function updateHud() {
-    if (lastPing !== null) elCur.textContent = fmt(lastPing);
+    if (lastPing !== null) setHud(elCur, fmt(lastPing), 'ms');
     if (stats.recv > 0) {
-      elAvg.textContent = fmt(stats.sum / stats.recv);
-      elMin.textContent = fmt(stats.min);
-      elMax.textContent = fmt(stats.max);
+      setHud(elAvg, fmt(stats.sum / stats.recv));
+      setHud(elMin, fmt(stats.min));
+      setHud(elMax, fmt(stats.max));
     }
     const loss = stats.sent > 0 ? (stats.sent - stats.recv) / stats.sent * 100 : 0;
-    elLoss.textContent = loss.toFixed(1) + '%';
+    setHud(elLoss, loss.toFixed(1), '%');
   }
 
+  // ===== Verdict =====
+  function computeVerdict() {
+    if (!running && stats.recv === 0) {
+      setVerdict('ok', 'IDLE', 'Ready',
+        'нажми START — 5-минутный замер пинга и диагностика');
+      return;
+    }
+
+    const loss = stats.sent > 0 ? (stats.sent - stats.recv) / stats.sent * 100 : 0;
+    const avg = stats.recv > 0 ? stats.sum / stats.recv : null;
+    const jitter = stats.jitterN > 0 ? stats.jitterSum / stats.jitterN : 0;
+    const max = stats.max;
+    const min = stats.recv > 0 ? stats.min : null;
+
+    if (loss >= 5) {
+      setVerdict('bad', 'FAIL', 'Потери пакетов — проблема на линии',
+        `теряется ${loss.toFixed(1)}% запросов · сеть между вами и сервером · Wi-Fi/провайдер/маршрут`);
+      return;
+    }
+    if (loss >= 1) {
+      setVerdict('warn', 'WARN', 'Небольшие потери',
+        `${loss.toFixed(1)}% запросов не дошло · скорее Wi-Fi у пользователя`);
+      return;
+    }
+    if (jitter > 40) {
+      setVerdict('warn', 'WARN', 'Высокий джиттер — канал нестабилен',
+        `пинг скачет на ±${jitter.toFixed(0)} мс · обычно Wi-Fi/роутер/загрузка канала у вас`);
+      return;
+    }
+    if (jitter > 20) {
+      setVerdict('warn', 'WARN', 'Умеренный джиттер',
+        `колебания ±${jitter.toFixed(0)} мс · приемлемо, но 5GHz Wi-Fi или кабель лучше`);
+      return;
+    }
+    if (avg !== null && avg > 150 && (max - min) < avg * 0.5) {
+      setVerdict('warn', 'WARN', 'Высокий, но стабильный пинг',
+        `avg ${avg.toFixed(0)} мс · физическое расстояние / долгий маршрут · не у вас и не у сервера`);
+      return;
+    }
+    if (avg !== null && avg > 80) {
+      setVerdict('warn', 'WARN', 'Повышенный пинг',
+        `avg ${avg.toFixed(0)} мс · далеко от сервера или перегружен канал`);
+      return;
+    }
+    if (min !== null && max > min * 3 && max > 100) {
+      setVerdict('warn', 'WARN', 'Редкие пики',
+        `обычно ${min.toFixed(0)} мс, всплески до ${max.toFixed(0)} мс · кратковременная нагрузка`);
+      return;
+    }
+
+    setVerdict('ok', ' OK ', 'Соединение стабильное',
+      `ping ${fmt(avg)} мс · потерь нет · джиттер ±${jitter.toFixed(0)} мс · всё в норме`);
+  }
+
+  function setVerdict(level, tag, title, detail) {
+    verdict.className = level;
+    verdict.innerHTML = `<span class="tag">${tag}</span><span class="title">${title}</span><span class="detail">${detail}</span>`;
+  }
+
+  // ===== Canvas =====
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth;
@@ -245,94 +592,220 @@
   function draw() {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
+    if (w === 0 || h === 0) return;
+
+    // фон
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, w, h);
 
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 1;
-    for (let i = 1; i < 10; i++) {
-      const y = (h / 10) * i;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    const padL = 38, padR = 8, padT = 28, padB = 16;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    // y-scale
+    let maxY = 60;
+    for (const p of dataPoints) {
+      if (p.ping != null && p.ping > maxY) maxY = p.ping;
+      if (p.max  != null && p.max  > maxY) maxY = p.max;
     }
-    for (let i = 1; i < 20; i++) {
-      const x = (w / 20) * i;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    maxY = Math.max(maxY * 1.15, 60);
+
+    // ---- сетка + подписи ----
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 1;
+    ctx.fillStyle = '#444';
+    ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+
+    const yTicks = 5;
+    for (let i = 0; i <= yTicks; i++) {
+      const v = maxY * (1 - i / yTicks);
+      const y = Math.round(padT + (plotH / yTicks) * i) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(w - padR, y);
+      ctx.stroke();
+      ctx.fillText(v.toFixed(0), padL - 4, y);
+    }
+
+    // вертикальные пунктирные линии каждую минуту
+    if (running || dataPoints.length > 1) {
+      const elapsed = running
+        ? Date.now() - startTime
+        : (dataPoints[dataPoints.length - 1]?.t || 0);
+      const totalMin = Math.max(1, Math.ceil(elapsed / 60000));
+      ctx.setLineDash([2, 4]);
+      for (let m = 1; m <= totalMin; m++) {
+        const x = padL + (m * 60000 / TEST_DURATION) * plotW;
+        if (x > w - padR) break;
+        ctx.beginPath();
+        ctx.moveTo(x, padT);
+        ctx.lineTo(x, padT + plotH);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    // ось X — время
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#444';
+    const marks = [0, 1, 2, 3, 4, 5];
+    for (const m of marks) {
+      const x = padL + (m / 5) * plotW;
+      ctx.fillText(m + 'm', x + 2, padT + plotH + 3);
     }
 
     if (dataPoints.length < 2) return;
 
-    let maxY = 0;
-    for (const p of dataPoints) if (p.ping > maxY) maxY = p.ping;
-    maxY = Math.max(maxY * 1.15, 50);
-
+    // ---- серии ----
     const N = dataPoints.length;
-    const stepX = w / (N - 1);
-    const yOf = (v) => h - (v / maxY) * (h - 20) - 10;
+    const stepX = plotW / Math.max(N - 1, 1);
+    const yOf = (v) => padT + plotH - (v / maxY) * plotH;
+    const xOf = (i) => padL + i * stepX;
+
+    // точечная сетка «как в терминале» под линией ping
+    ctx.fillStyle = 'rgba(0,212,255,0.06)';
+    for (let i = 0; i < N; i += 2) {
+      const p = dataPoints[i];
+      if (p.ping == null) continue;
+      const x = xOf(i);
+      const y = yOf(p.ping);
+      for (let ty = padT + plotH; ty > y; ty -= 6) {
+        ctx.fillRect(Math.round(x), Math.round(ty), 1, 1);
+      }
+    }
 
     const series = [
-      { key: 'ping', color: '#3b8dff', width: 2 },
-      { key: 'min',  color: '#3bff6b', width: 1.2 },
-      { key: 'avg',  color: '#ffd23b', width: 1.2 },
-      { key: 'max',  color: '#ff3b3b', width: 1.2 },
+      { key: 'max',  color: COLORS.max,  width: 1 },
+      { key: 'avg',  color: COLORS.avg,  width: 1 },
+      { key: 'min',  color: COLORS.min,  width: 1 },
+      { key: 'ping', color: COLORS.ping, width: 1.6 },
     ];
 
     for (const s of series) {
       ctx.beginPath();
       ctx.strokeStyle = s.color;
       ctx.lineWidth = s.width;
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = s.color;
+      ctx.lineJoin = 'miter';
+      ctx.lineCap = 'butt';
       let started = false;
       for (let i = 0; i < N; i++) {
         const p = dataPoints[i];
         const v = p[s.key];
-        if (v === null || v === undefined) { started = false; continue; }
-        const x = i * stepX;
-        const y = yOf(v);
+        if (v == null) { started = false; continue; }
+        const x = Math.round(xOf(i));
+        const y = Math.round(yOf(v));
         if (!started) { ctx.moveTo(x, y); started = true; }
         else ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
-    ctx.shadowBlur = 0;
 
-    ctx.fillStyle = '#ffd23b';
+    // маркеры потерь — красные ▓ внизу
     for (let i = 0; i < N; i++) {
       if (dataPoints[i].lost) {
-        const x = i * stepX;
-        ctx.fillRect(x - 1, h - 6, 2, 4);
+        const x = Math.round(xOf(i));
+        ctx.fillStyle = COLORS.loss;
+        ctx.fillRect(x, padT + plotH - 4, 1, 4);
       }
     }
 
-    ctx.fillStyle = '#444';
-    ctx.font = '11px Consolas, monospace';
-    ctx.fillText(maxY.toFixed(0) + ' ms', 6, 14);
+    // последняя точка + курсор
+    const lastValid = [...dataPoints].reverse().find(p => p.ping != null);
+    if (lastValid) {
+      const idx = dataPoints.indexOf(lastValid);
+      const x = Math.round(xOf(idx));
+      const y = Math.round(yOf(lastValid.ping));
+
+      ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = 'rgba(0,212,255,0.3)';
+      ctx.beginPath();
+      ctx.moveTo(x, padT);
+      ctx.lineTo(x, padT + plotH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = COLORS.ping;
+      ctx.fillRect(x - 1, y - 1, 3, 3);
+    }
+
+    // тултип
+    if (mouseX !== null && N > 0) {
+      const idx = Math.max(0, Math.min(N - 1, Math.round((mouseX - padL) / stepX)));
+      const p = dataPoints[idx];
+      if (p) {
+        const x = Math.round(xOf(idx));
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 0.5, padT);
+        ctx.lineTo(x + 0.5, padT + plotH);
+        ctx.stroke();
+
+        const seconds = Math.round((p.t || 0) / 1000);
+        const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+        const ss = String(seconds % 60).padStart(2, '0');
+
+        tooltip.style.display = 'block';
+        tooltip.innerHTML = `
+          <div class="t-row"><span class="t-label">t</span><span>${mm}:${ss}</span></div>
+          <div class="t-row"><span class="t-label" style="color:${COLORS.ping}">ping</span><span style="color:${COLORS.ping}">${p.ping != null ? p.ping.toFixed(0) + ' ms' : 'LOSS'}</span></div>
+          <div class="t-row"><span class="t-label" style="color:${COLORS.min}">min</span><span>${p.min != null ? p.min.toFixed(0) : '—'}</span></div>
+          <div class="t-row"><span class="t-label" style="color:${COLORS.avg}">avg</span><span>${p.avg != null ? p.avg.toFixed(0) : '—'}</span></div>
+          <div class="t-row"><span class="t-label" style="color:${COLORS.max}">max</span><span>${p.max != null ? p.max.toFixed(0) : '—'}</span></div>
+        `;
+        const tw = tooltip.offsetWidth;
+        let tx = x + 12;
+        if (tx + tw > w - 4) tx = x - tw - 12;
+        tooltip.style.left = tx + 'px';
+        tooltip.style.top = (padT + 6) + 'px';
+      }
+    } else {
+      tooltip.style.display = 'none';
+    }
   }
 
-  function pushPoint(ping, lost) {
-    const now = Date.now();
-    const elapsed = now - startTime;
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left;
+    draw();
+  });
+  canvas.addEventListener('mouseleave', () => { mouseX = null; draw(); });
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches[0]) {
+      const r = canvas.getBoundingClientRect();
+      mouseX = e.touches[0].clientX - r.left;
+      draw();
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchend', () => { mouseX = null; draw(); });
 
+  // ===== Test logic =====
+  function pushPoint(ping, lost) {
+    const elapsed = Date.now() - startTime;
     if (!lost) {
       stats.recv++;
       stats.sum += ping;
       if (ping < stats.min) stats.min = ping;
       if (ping > stats.max) stats.max = ping;
+      if (stats.lastRtt !== null) {
+        stats.jitterSum += Math.abs(ping - stats.lastRtt);
+        stats.jitterN++;
+      }
+      stats.lastRtt = ping;
       lastPing = ping;
     }
     const avg = stats.recv > 0 ? stats.sum / stats.recv : null;
     const min = stats.recv > 0 ? stats.min : null;
     const max = stats.recv > 0 ? stats.max : null;
 
-    dataPoints.push({
-      t: elapsed,
-      ping: lost ? null : ping,
-      min, avg, max,
-      lost: !!lost,
-    });
+    dataPoints.push({ t: elapsed, ping: lost ? null : ping, min, avg, max, lost: !!lost });
     if (dataPoints.length > MAX_POINTS) dataPoints.shift();
 
     updateHud();
+    computeVerdict();
     draw();
   }
 
@@ -341,26 +814,22 @@
     const id = ++pingId;
     const now = performance.now();
     stats.sent++;
-
     const timer = setTimeout(() => {
       if (pendingPings.has(id)) {
         pendingPings.delete(id);
         pushPoint(0, true);
       }
     }, 2000);
-
     pendingPings.set(id, { perfNow: now, timer });
     ws.send(JSON.stringify({ type: 'ping', id, clientTime: Date.now() }));
   }
 
   function onPong(msg) {
-    const id = msg.id;
-    const pending = pendingPings.get(id);
+    const pending = pendingPings.get(msg.id);
     if (!pending) return;
     clearTimeout(pending.timer);
-    pendingPings.delete(id);
-    const rtt = performance.now() - pending.perfNow;
-    pushPoint(rtt, false);
+    pendingPings.delete(msg.id);
+    pushPoint(performance.now() - pending.perfNow, false);
   }
 
   async function startTest() {
@@ -371,24 +840,25 @@
     dataPoints = [];
     pendingPings.forEach(p => clearTimeout(p.timer));
     pendingPings.clear();
-    stats = { sent: 0, recv: 0, sum: 0, min: Infinity, max: 0 };
+    stats = { sent: 0, recv: 0, sum: 0, min: Infinity, max: 0, jitterSum: 0, jitterN: 0, lastRtt: null };
     lastPing = null;
     updateHud();
+    computeVerdict();
     draw();
 
     try {
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        elStatus.textContent = 'Подключаемся к ' + WS_URL + ' ...';
+        elStatus.textContent = 'connecting…';
         await connectWS();
       }
     } catch (e) {
-      elStatus.textContent = 'Ошибка WebSocket: ' + e;
+      elStatus.textContent = 'connect failed';
       btnStart.disabled = false;
       startOverlay.classList.remove('hidden');
       return;
     }
 
-    elStatus.textContent = 'Тест идёт…';
+    elStatus.textContent = 'running · 5min';
     running = true;
     startTime = Date.now();
     elCountdown.style.display = 'block';
@@ -403,9 +873,7 @@
       const remain = TEST_DURATION - (Date.now() - startTime);
       if (remain <= 0) { clearInterval(countdownId); finishTest(); return; }
       const s = Math.ceil(remain / 1000);
-      const mm = String(Math.floor(s / 60)).padStart(2, '0');
-      const ss = String(s % 60).padStart(2, '0');
-      elCountdown.textContent = mm + ':' + ss;
+      elCountdown.textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
     }, 250);
 
     setTimeout(finishTest, TEST_DURATION + 50);
@@ -419,14 +887,12 @@
     elCountdown.style.display = 'none';
     pendingPings.forEach(p => clearTimeout(p.timer));
     pendingPings.clear();
-    elStatus.textContent = 'Тест завершён. Итог: отправлено ' + stats.sent +
-      ', получено ' + stats.recv +
-      ', потерь ' + (stats.sent - stats.recv) +
-      ' (' + (stats.sent ? ((stats.sent - stats.recv) / stats.sent * 100).toFixed(1) : 0) + '%)' +
-      ', avg ' + fmt(stats.recv ? stats.sum / stats.recv : null) + ' ms' +
-      ', min ' + fmt(stats.min) + ' ms' +
-      ', max ' + fmt(stats.max) + ' ms';
+
+    const avg = stats.recv > 0 ? stats.sum / stats.recv : null;
+    const loss = stats.sent > 0 ? (stats.sent - stats.recv) / stats.sent * 100 : 0;
+    elStatus.textContent = `done · sent=${stats.sent} · loss=${loss.toFixed(1)}% · avg=${fmt(avg)}ms`;
     updateHud();
+    computeVerdict();
     draw();
   }
 
