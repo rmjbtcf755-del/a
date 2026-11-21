@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Ping Test — ffa.agar.su</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    background: #000; color: #fff;
+    font-family: 'Consolas', 'Monaco', monospace;
+    overflow: hidden; height: 100%;
+  }
+  #wrap { display: flex; flex-direction: column; height: 100vh; }
+
+  #hud {
+    padding: 8px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; border-bottom: 1px solid #222; background: #000;
+  }
+  #hud .stat { margin-right: 22px; }
+  .label { color: #777; }
+  .val { font-weight: bold; }
+  .red    { color: #ff3b3b; }
+  .blue   { color: #3b8dff; }
+  .yellow { color: #ffd23b; }
+  .green  { color: #3bff6b; }
+
+  #main { flex: 1; display: flex; position: relative; min-height: 0; }
+
+  #graph-col { flex: 1; position: relative; min-width: 0; }
+  canvas#graph { display: block; width: 100%; height: 100%; }
+
+  #side {
+    width: 320px; border-left: 1px solid #222;
+    display: flex; flex-direction: column;
+    background: #000;
+  }
+  #info-wrap { padding: 16px; }
+  #infoTitle { font-size: 12px; color: #666; margin-bottom: 14px; letter-spacing: 1px; }
+  #info { font-size: 14px; line-height: 1.8; }
+  #info .row { margin-bottom: 14px; }
+  #info .who { color: #777; font-size: 12px; letter-spacing: 1px; }
+  #info .city { font-size: 18px; font-weight: bold; }
+  #info .cityServ { color: #ff3b3b; }
+  #info .cityCli  { color: #3b8dff; }
+  #info .country { color: #555; font-size: 12px; margin-left: 6px; }
+  #info .ip { color: #444; font-size: 12px; display: block; margin-top: 2px; }
+
+  #legend {
+    position: absolute; top: 10px; left: 16px; font-size: 12px;
+  }
+  #legend span { margin-right: 14px; }
+  #legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+  #status {
+    padding: 6px 16px; font-size: 12px; color: #666;
+    border-top: 1px solid #222;
+  }
+
+  #startOverlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 50;
+    transition: opacity 0.45s ease;
+  }
+  #startOverlay.hidden { opacity: 0; pointer-events: none; }
+  #startBtn {
+    pointer-events: auto;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #1a3a7a, #0a1020);
+    border: 3px solid #3b8dff;
+    color: #3b8dff;
+    font-family: inherit;
+    font-size: 22px; font-weight: bold; letter-spacing: 2px;
+    cursor: pointer;
+    box-shadow: 0 0 30px rgba(59,141,255,0.6), inset 0 0 30px rgba(59,141,255,0.25);
+    transition: transform 0.4s cubic-bezier(.4,0,.6,1),
+                box-shadow 0.2s, border-color 0.2s, color 0.2s, opacity 0.4s;
+    outline: none;
+  }
+  #startOverlay.hidden #startBtn { transform: scale(0.4); opacity: 0; }
+  #startBtn:hover:not(:disabled) {
+    box-shadow: 0 0 55px rgba(59,141,255,0.9), inset 0 0 40px rgba(59,141,255,0.4);
+  }
+  #startBtn:active:not(:disabled) {
+    transform: scale(0.92);
+    box-shadow: 0 0 70px rgba(59,141,255,1), inset 0 0 60px rgba(59,141,255,0.7);
+  }
+  #startBtn:disabled {
+    cursor: not-allowed;
+    border-color: #ffd23b; color: #ffd23b;
+    background: radial-gradient(circle at 30% 30%, #3a3000, #100a00);
+    box-shadow: 0 0 30px rgba(255,210,59,0.5), inset 0 0 30px rgba(255,210,59,0.2);
+  }
+  #startBtn .small {
+    display: block; font-size: 11px; font-weight: normal;
+    letter-spacing: 0; margin-top: 4px; color: #888;
+  }
+
+  #countdown {
+    position: absolute; top: 10px; right: 16px;
+    font-size: 22px; color: #ffd23b; font-weight: bold;
+    text-shadow: 0 0 6px #ffd23b; z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div>
+      <span class="stat"><span class="label">PING</span> <span id="curPing" class="val">—</span><span class="label">ms</span></span>
+      <span class="stat"><span class="label">AVG</span> <span id="avgPing" class="val blue">—</span></span>
+      <span class="stat"><span class="label">MIN</span> <span id="minPing" class="val green">—</span></span>
+      <span class="stat"><span class="label">MAX</span> <span id="maxPing" class="val red">—</span></span>
+      <span class="stat"><span class="label">LOSS</span> <span id="lossPct" class="val yellow">0%</span></span>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="graph-col">
+      <canvas id="graph"></canvas>
+      <div id="legend">
+        <span><span class="dot" style="background:#3b8dff"></span>ping</span>
+        <span><span class="dot" style="background:#3bff6b"></span>min</span>
+        <span><span class="dot" style="background:#ffd23b"></span>avg</span>
+        <span><span class="dot" style="background:#ff3b3b"></span>max</span>
+      </div>
+      <div id="countdown" style="display:none"></div>
+      <div id="startOverlay">
+        <button id="startBtn">СТАРТ<span class="small">5 минут</span></button>
+      </div>
+    </div>
+
+    <div id="side">
+      <div id="info-wrap">
+        <div id="infoTitle">СЕРВЕР / ИГРОК</div>
+        <div id="info">
+          <div class="row">
+            <div class="who">СЕРВЕР</div>
+            <div><span id="srvCity" class="city cityServ">—</span><span id="srvCountry" class="country"></span></div>
+            <span id="srvIp" class="ip"></span>
+          </div>
+          <div class="row">
+            <div class="who">ИГРОК</div>
+            <div><span id="cliCity" class="city cityCli">—</span><span id="cliCountry" class="country"></span></div>
+            <span id="cliIp" class="ip"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status">Готов к запуску. Нажмите СТАРТ.</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('graph');
+  const ctx = canvas.getContext('2d');
+
+  const elCur = document.getElementById('curPing');
+  const elAvg = document.getElementById('avgPing');
+  const elMin = document.getElementById('minPing');
+  const elMax = document.getElementById('maxPing');
+  const elLoss = document.getElementById('lossPct');
+  const elCountdown = document.getElementById('countdown');
+  const elStatus = document.getElementById('status');
+  const btnStart = document.getElementById('startBtn');
+  const startOverlay = document.getElementById('startOverlay');
+
+  const elSrvCity = document.getElementById('srvCity');
+  const elSrvCountry = document.getElementById('srvCountry');
+  const elSrvIp = document.getElementById('srvIp');
+  const elCliCity = document.getElementById('cliCity');
+  const elCliCountry = document.getElementById('cliCountry');
+  const elCliIp = document.getElementById('cliIp');
+
+  const WS_URL = 'wss://ffa.agar.su:8443/';
+  let ws = null;
+
+  function connectWS() {
+    return new Promise((resolve, reject) => {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => resolve(ws);
+      ws.onerror = (e) => reject(e);
+      ws.onclose = () => { elStatus.textContent = 'WebSocket закрыт.'; };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'geo') {
+            elSrvCity.textContent = msg.server.city || 'Unknown';
+            elSrvCountry.textContent = msg.server.country ? ' / ' + msg.server.country : '';
+            elSrvIp.textContent = msg.server.ip || '';
+            elCliCity.textContent = msg.client.city || 'Unknown';
+            elCliCountry.textContent = msg.client.country ? ' / ' + msg.client.country : '';
+            elCliIp.textContent = msg.client.ip || '';
+          } else if (msg.type === 'pong') {
+            onPong(msg);
+          }
+        } catch (e) {}
+      };
+    });
+  }
+
+  const TEST_DURATION = 5 * 60 * 1000;
+  const PING_INTERVAL = 200;
+  const MAX_POINTS = 3000;
+
+  let dataPoints = [];
+  let running = false;
+  let startTime = 0;
+  let pingId = 0;
+  let pendingPings = new Map();
+  let stats = { sent: 0, recv: 0, sum: 0, min: Infinity, max: 0 };
+  let lastPing = null;
+
+  function fmt(v) {
+    if (v === Infinity || v === null || v === undefined) return '—';
+    return Math.round(v);
+  }
+
+  function updateHud() {
+    if (lastPing !== null) elCur.textContent = fmt(lastPing);
+    if (stats.recv > 0) {
+      elAvg.textContent = fmt(stats.sum / stats.recv);
+      elMin.textContent = fmt(stats.min);
+      elMax.textContent = fmt(stats.max);
+    }
+    const loss = stats.sent > 0 ? (stats.sent - stats.recv) / stats.sent * 100 : 0;
+    elLoss.textContent = loss.toFixed(1) + '%';
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+  window.addEventListener('resize', resize);
+
+  function draw() {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 10; i++) {
+      const y = (h / 10) * i;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    for (let i = 1; i < 20; i++) {
+      const x = (w / 20) * i;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+
+    if (dataPoints.length < 2) return;
+
+    let maxY = 0;
+    for (const p of dataPoints) if (p.ping > maxY) maxY = p.ping;
+    maxY = Math.max(maxY * 1.15, 50);
+
+    const N = dataPoints.length;
+    const stepX = w / (N - 1);
+    const yOf = (v) => h - (v / maxY) * (h - 20) - 10;
+
+    const series = [
+      { key: 'ping', color: '#3b8dff', width: 2 },
+      { key: 'min',  color: '#3bff6b', width: 1.2 },
+      { key: 'avg',  color: '#ffd23b', width: 1.2 },
+      { key: 'max',  color: '#ff3b3b', width: 1.2 },
+    ];
+
+    for (const s of series) {
+      ctx.beginPath();
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = s.width;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = s.color;
+      let started = false;
+      for (let i = 0; i < N; i++) {
+        const p = dataPoints[i];
+        const v = p[s.key];
+        if (v === null || v === undefined) { started = false; continue; }
+        const x = i * stepX;
+        const y = yOf(v);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#ffd23b';
+    for (let i = 0; i < N; i++) {
+      if (dataPoints[i].lost) {
+        const x = i * stepX;
+        ctx.fillRect(x - 1, h - 6, 2, 4);
+      }
+    }
+
+    ctx.fillStyle = '#444';
+    ctx.font = '11px Consolas, monospace';
+    ctx.fillText(maxY.toFixed(0) + ' ms', 6, 14);
+  }
+
+  function pushPoint(ping, lost) {
+    const now = Date.now();
+    const elapsed = now - startTime;
+
+    if (!lost) {
+      stats.recv++;
+      stats.sum += ping;
+      if (ping < stats.min) stats.min = ping;
+      if (ping > stats.max) stats.max = ping;
+      lastPing = ping;
+    }
+    const avg = stats.recv > 0 ? stats.sum / stats.recv : null;
+    const min = stats.recv > 0 ? stats.min : null;
+    const max = stats.recv > 0 ? stats.max : null;
+
+    dataPoints.push({
+      t: elapsed,
+      ping: lost ? null : ping,
+      min, avg, max,
+      lost: !!lost,
+    });
+    if (dataPoints.length > MAX_POINTS) dataPoints.shift();
+
+    updateHud();
+    draw();
+  }
+
+  function sendPing() {
+    if (!running || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const id = ++pingId;
+    const now = performance.now();
+    stats.sent++;
+
+    const timer = setTimeout(() => {
+      if (pendingPings.has(id)) {
+        pendingPings.delete(id);
+        pushPoint(0, true);
+      }
+    }, 2000);
+
+    pendingPings.set(id, { perfNow: now, timer });
+    ws.send(JSON.stringify({ type: 'ping', id, clientTime: Date.now() }));
+  }
+
+  function onPong(msg) {
+    const id = msg.id;
+    const pending = pendingPings.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingPings.delete(id);
+    const rtt = performance.now() - pending.perfNow;
+    pushPoint(rtt, false);
+  }
+
+  async function startTest() {
+    if (running) return;
+    btnStart.disabled = true;
+    startOverlay.classList.add('hidden');
+
+    dataPoints = [];
+    pendingPings.forEach(p => clearTimeout(p.timer));
+    pendingPings.clear();
+    stats = { sent: 0, recv: 0, sum: 0, min: Infinity, max: 0 };
+    lastPing = null;
+    updateHud();
+    draw();
+
+    try {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        elStatus.textContent = 'Подключаемся к ' + WS_URL + ' ...';
+        await connectWS();
+      }
+    } catch (e) {
+      elStatus.textContent = 'Ошибка WebSocket: ' + e;
+      btnStart.disabled = false;
+      startOverlay.classList.remove('hidden');
+      return;
+    }
+
+    elStatus.textContent = 'Тест идёт…';
+    running = true;
+    startTime = Date.now();
+    elCountdown.style.display = 'block';
+
+    sendPing();
+    const intervalId = setInterval(() => {
+      if (!running) { clearInterval(intervalId); return; }
+      sendPing();
+    }, PING_INTERVAL);
+
+    const countdownId = setInterval(() => {
+      const remain = TEST_DURATION - (Date.now() - startTime);
+      if (remain <= 0) { clearInterval(countdownId); finishTest(); return; }
+      const s = Math.ceil(remain / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      elCountdown.textContent = mm + ':' + ss;
+    }, 250);
+
+    setTimeout(finishTest, TEST_DURATION + 50);
+  }
+
+  function finishTest() {
+    if (!running) return;
+    running = false;
+    btnStart.disabled = false;
+    startOverlay.classList.remove('hidden');
+    elCountdown.style.display = 'none';
+    pendingPings.forEach(p => clearTimeout(p.timer));
+    pendingPings.clear();
+    elStatus.textContent = 'Тест завершён. Итог: отправлено ' + stats.sent +
+      ', получено ' + stats.recv +
+      ', потерь ' + (stats.sent - stats.recv) +
+      ' (' + (stats.sent ? ((stats.sent - stats.recv) / stats.sent * 100).toFixed(1) : 0) + '%)' +
+      ', avg ' + fmt(stats.recv ? stats.sum / stats.recv : null) + ' ms' +
+      ', min ' + fmt(stats.min) + ' ms' +
+      ', max ' + fmt(stats.max) + ' ms';
+    updateHud();
+    draw();
+  }
+
+  btnStart.addEventListener('click', startTest);
+
+  resize();
+})();
+</script>
+</body>
+</html>
