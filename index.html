@@ -20343,7 +20343,11 @@ function updateRegionOnlineTotals(totals) {
       const row = document.createElement("div");
       row.className = "rating-row " + medal + (passId ? " rating-row--link" : "");
       row.dataset.skinNick = name || "";
-      row.innerHTML = `<div>${index + 1}</div><div>${name || "—"}</div><div class="rating-pts">${pointsLabel(pts)}</div><div class="avatar" style="background-image: url('${skinUrl}');"></div>`;
+      row.innerHTML = `<div>${index + 1}</div><div>${name || "—"}</div><div class="rating-pts">${pointsLabel(pts)}</div>`;
+      const avatar = document.createElement("div");
+      avatar.className = "avatar";
+      row.appendChild(avatar);
+      assignCachedBackground(avatar, skinUrl);
       if (passId) {
         const profileBase = isClan ? STATS_CLAN_PROFILE_BASE : STATS_PROFILE_BASE;
         row.title = isClan ? "Профиль клана" : "Профиль";
