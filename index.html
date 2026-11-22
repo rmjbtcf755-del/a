@@ -3,6 +3,157 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <script>
+    (function () {
+      var CACHE = "agarsu-static-v1";
+      var mem = new Map();
+      var STATIC = /\.(?:png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|css)(?:$|[?#])/i;
+      function absUrl(url, base) {
+        return new URL(url, base || location.href).href;
+      }
+      function shouldCache(url, base) {
+        try {
+          var u = new URL(url, base || location.href);
+          if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+          if (u.hostname === "api.agar.su") return false;
+          var hostOk = u.hostname === location.hostname || u.hostname === "agar.su" || u.hostname === "www.agar.su" || u.hostname === "xn--80aaiv4ak.xn--p1ai" || u.hostname === "www.xn--80aaiv4ak.xn--p1ai";
+          return hostOk && STATIC.test(u.pathname);
+        } catch (e) {
+          return false;
+        }
+      }
+      function loadStatic(url, base) {
+        var abs = absUrl(url, base);
+        if (mem.has(abs)) return mem.get(abs);
+        var job = (window.caches && caches.open ? caches.open(CACHE) : Promise.resolve(null)).then(function (cache) {
+          var fromNet = function () {
+            return fetch(abs).then(function (res) {
+              if (!res.ok) throw new Error("static " + res.status);
+              var copy = res.clone();
+              return res.blob().then(function (blob) {
+                if (!blob || !blob.size) throw new Error("empty");
+                if (cache) cache.put(abs, copy).catch(function () {});
+                return URL.createObjectURL(blob);
+              });
+            });
+          };
+          if (!cache) return fromNet();
+          return cache.match(abs).then(function (hit) {
+            if (!hit) return fromNet();
+            return hit.blob().then(function (blob) {
+              if (!blob || !blob.size) return fromNet();
+              return URL.createObjectURL(blob);
+            });
+          }).catch(fromNet);
+        });
+        mem.set(abs, job);
+        job.catch(function () { if (mem.get(abs) === job) mem.delete(abs); });
+        return job;
+      }
+      function rewriteCss(css, base) {
+        var re = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+        var found = [];
+        var m;
+        while ((m = re.exec(css))) {
+          var raw = m[2].trim();
+          if (/^(data:|blob:)/i.test(raw) || !shouldCache(raw, base) || found.indexOf(raw) !== -1) continue;
+          found.push(raw);
+        }
+        return Promise.all(found.map(function (raw) {
+          return loadStatic(raw, base).then(function (blob) { return [raw, blob]; }).catch(function () { return null; });
+        })).then(function (pairs) {
+          var out = css;
+          pairs.forEach(function (pair) {
+            if (!pair) return;
+            var escaped = pair[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            out = out.replace(new RegExp("url\\(\\s*(['\"]?)" + escaped + "\\1\\s*\\)", "g"), "url('" + pair[1] + "')");
+          });
+          return out;
+        });
+      }
+      function paint(el) {
+        var raw = el.getAttribute("data-static-src");
+        if (!raw || el.getAttribute("data-static-done") === raw) return;
+        el.setAttribute("data-static-done", raw);
+        loadStatic(raw).then(function (blob) {
+          if (el.getAttribute("data-static-done") !== raw) return;
+          var tag = el.tagName;
+          if (tag === "IMG" || tag === "SOURCE" || tag === "VIDEO" || tag === "AUDIO" || tag === "SCRIPT") el.src = blob;
+          else if (tag === "LINK") el.href = blob;
+          else el.style.backgroundImage = 'url("' + blob + '")';
+        }).catch(function () {
+          var tag = el.tagName;
+          if (tag === "IMG" || tag === "SOURCE") el.src = raw;
+          else if (tag === "LINK") el.href = raw;
+        });
+      }
+      function hydrate(root) {
+        if (!root || root.nodeType !== 1) return;
+        if (root.hasAttribute && root.hasAttribute("data-static-src")) paint(root);
+        if (root.querySelectorAll) root.querySelectorAll("[data-static-src]").forEach(paint);
+      }
+      window.agarsuStaticUrl = function (url, base) { return loadStatic(url, base); };
+      window.agarsuBootStyles = function () {
+        var css = document.getElementById("site-css");
+        if (css) {
+          rewriteCss(css.textContent, location.href).then(function (text) {
+            css.textContent = text;
+            css.disabled = false;
+          }).catch(function () { css.disabled = false; });
+        }
+        hydrate(document.documentElement);
+        var fonts = document.getElementById("site-fonts");
+        if (!fonts) return;
+        var href = fonts.getAttribute("data-href");
+        if (!href) return;
+        var base = absUrl(href);
+        loadStatic(href).then(function (blobUrl) {
+          return fetch(blobUrl).then(function (res) { return res.text(); });
+        }).then(function (text) {
+          return rewriteCss(text, base);
+        }).then(function (text) {
+          var style = document.createElement("style");
+          style.textContent = text;
+          fonts.replaceWith(style);
+        }).catch(function () {});
+        hydrate(document.documentElement);
+      };
+      new MutationObserver(function (list) {
+        list.forEach(function (rec) {
+          rec.addedNodes.forEach(function (node) { hydrate(node); });
+        });
+      }).observe(document.documentElement, { childList: true, subtree: true });
+      var imgSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+      if (imgSrc && imgSrc.set) {
+        Object.defineProperty(HTMLImageElement.prototype, "src", {
+          configurable: true,
+          enumerable: true,
+          get: function () { return imgSrc.get.call(this); },
+          set: function (value) {
+            var img = this;
+            if (!shouldCache(value)) { imgSrc.set.call(img, value); return; }
+            loadStatic(value).then(function (blob) { imgSrc.set.call(img, blob); }).catch(function () { imgSrc.set.call(img, value); });
+          }
+        });
+      }
+      var bg = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, "backgroundImage");
+      if (bg && bg.set) {
+        Object.defineProperty(CSSStyleDeclaration.prototype, "backgroundImage", {
+          configurable: true,
+          enumerable: true,
+          get: function () { return bg.get.call(this); },
+          set: function (value) {
+            var decl = this;
+            var match = String(value || "").match(/url\(\s*(['"]?)([^'")]+)\1\s*\)/);
+            if (!match || !shouldCache(match[2])) { bg.set.call(decl, value); return; }
+            loadStatic(match[2]).then(function (blob) {
+              bg.set.call(decl, String(value).replace(match[2], blob));
+            }).catch(function () { bg.set.call(decl, value); });
+          }
+        });
+      }
+    })();
+    </script>
     <meta name="theme-color" content="#070c16">
     <meta name="color-scheme" content="dark">
     <meta name="mobile-web-app-capable" content="yes">
@@ -19,10 +170,10 @@
     <meta property="og:url" content="https://agar.su">
     <meta property="og:type" content="website">
     <title data-en="Agar.io - total clone .su" data-tr="Agar.su - Çevrimiçi Oyna" data-zh="Agar.su - 在线游戏" data-ar="Agar.su - العب عبر الإنترنت" data-es="Agar.su - Jugar en línea" data-pl="Agar.su - Graj online" data-de="Agar.su - Online spielen" data-uk="Agar.su - Гра онлайн">Agar.su - Игра Онлайн</title>
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="icon" data-static-src="/icon.svg" type="image/svg+xml">
     <link rel="canonical" href="https://agar.su">
-    <link rel="stylesheet" href="./fonts/fonts.css">
-    <style>
+    <link id="site-fonts" rel="stylesheet" data-href="./fonts/fonts.css">
+    <style id="site-css" disabled>
 :root {
     --vs-primary: 29 92 255;
     -webkit-touch-callout: none;
@@ -9496,6 +9647,7 @@ html.reduce-motion .overlays *::after {
 
 
 </style>
+    <script>if (window.agarsuBootStyles) window.agarsuBootStyles();</script>
     <style>html,body{background:#070c16}</style>
 </head>
 <body>
@@ -10222,8 +10374,8 @@ html.reduce-motion .overlays *::after {
   <canvas id="canvas"></canvas>
   <div id="friendArrows" class="friend-arrows" aria-hidden="true"></div>
   <div id="touch-buttons" class="touch-buttons" hidden>
-    <button type="button" id="touch-eject" class="touch-btn touch-eject" aria-label="Eject"><img src="./photo/eject.png" alt=""></button>
-    <button type="button" id="touch-split" class="touch-btn touch-split" aria-label="Split"><img src="./photo/split.png" alt=""></button>
+    <button type="button" id="touch-eject" class="touch-btn touch-eject" aria-label="Eject"><img data-static-src="./photo/eject.png" alt=""></button>
+    <button type="button" id="touch-split" class="touch-btn touch-split" aria-label="Split"><img data-static-src="./photo/split.png" alt=""></button>
   </div>
   <div id="connect-verify-overlay" class="inl-13">
     <div id="connect-verify">
@@ -10273,13 +10425,13 @@ html.reduce-motion .overlays *::after {
         <div class="chatX_feed" id="chatX_feed"></div>
     </div>
 	  		  	  	  <div class="emoji-list">
-  <div class="emoji-item" data-code=":50:"><img src="./emoji/50.gif"></div>
-  <div class="emoji-item" data-code=":253:"><img src="./emoji/253.gif"></div>
-  <div class="emoji-item" data-code=":26:"><img src="./emoji/26.gif"></div>
-  <div class="emoji-item" data-code=":104:"><img src="./emoji/104.png"></div>
-  <div class="emoji-item" data-code=":105:"><img src="./emoji/105.png"></div>
-  <div class="emoji-item" data-code=":92:"><img src="./emoji/92.png"></div>
-  <div class="emoji-item" data-code=":5:"><img src="./emoji/5.png"></div>
+  <div class="emoji-item" data-code=":50:"><img data-static-src="./emoji/50.gif"></div>
+  <div class="emoji-item" data-code=":253:"><img data-static-src="./emoji/253.gif"></div>
+  <div class="emoji-item" data-code=":26:"><img data-static-src="./emoji/26.gif"></div>
+  <div class="emoji-item" data-code=":104:"><img data-static-src="./emoji/104.png"></div>
+  <div class="emoji-item" data-code=":105:"><img data-static-src="./emoji/105.png"></div>
+  <div class="emoji-item" data-code=":92:"><img data-static-src="./emoji/92.png"></div>
+  <div class="emoji-item" data-code=":5:"><img data-static-src="./emoji/5.png"></div>
 </div>
     <div class="chatX_emch">
       <div class="coord" id="emoji_toggle"><i class="fa-solid fa-face-grin-squint"></i></div>
@@ -10390,7 +10542,7 @@ html.reduce-motion .overlays *::after {
   </div>
     </div>
     <div id="statsWrapper" class="statsWrapper">
-      <img class="death" src="./photo/death.png" alt="">
+      <img class="death" data-static-src="./photo/death.png" alt="">
       <div class="death-actions">
       <div class="share-label" data-en="share:" data-tr="paylaş:" data-zh="分享：" data-ar="مشاركة:" data-es="compartir:" data-pl="udostępnij:" data-de="teilen:" data-uk="поділитися:">поделиться:</div>
       <div id="buttons">
@@ -21698,7 +21850,7 @@ function updateRegionOnlineTotals(totals) {
     return text.replace(/:([0-9]+):/g, (match, p1) => {
       const num = Number(p1);
       const ext = gifEmojis.includes(num) ? "gif" : "png";
-      return `<img class="chat-emoji" src="./emoji/${num}.${ext}">`;
+      return `<img class="chat-emoji" data-static-src="./emoji/${num}.${ext}">`;
     });
   }
   function createDialog(S, hooks, number, senderName, senderAvatar) {
