@@ -6555,7 +6555,7 @@ res = await fetchWithTimeout(apiBase + "/challenge", { cache: "no-store" }, 3500
       if (host.includes(s.host)) return s.id;
     }
     if (host.includes("ffa.agar.su")) return "ffa";
-    if (host.includes("ms.agar.su:6001") || host === "ms.agar.su" || host.startsWith("ms.agar.su/")) return "ms";
+    if (host.includes("ms.agar.su:6007") || host === "ms.agar.su:6008" || host.startsWith("ms.agar.su:6008/")) return "ms";
     return null;
   }
 
