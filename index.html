@@ -13788,6 +13788,9 @@ async function preloadStaticLists(force = false) {
 }
   var skinImageCache = new Map;
   var persistentImgStore = null;
+  var persistentBlobUrls = new Map;
+  var persistentImgInflight = new Map;
+  var imgIdbPromise = null;
   function getPersistentImgStore() {
     if (persistentImgStore !== null) return persistentImgStore;
     try {
@@ -13801,28 +13804,137 @@ async function preloadStaticLists(force = false) {
     }
     return persistentImgStore;
   }
-  function loadPersistentImage(requestUrl, cacheKey) {
-    const isHttp = /^https?:/i.test(cacheKey);
-    return getPersistentImgStore().then(store => {
-      const doFetch = () => fetch(requestUrl, {
-        cache: "no-store"
-      }).then(res => {
-        if (!res.ok) throw new Error("image fetch " + res.status);
-        if (isHttp && store) {
-          try {
-            store.put(cacheKey, res.clone()).catch(() => {});
-          } catch (e) {}
+  function openImgIdb() {
+    if (imgIdbPromise) return imgIdbPromise;
+    imgIdbPromise = new Promise(resolve => {
+      try {
+        if (typeof indexedDB === "undefined") {
+          resolve(null);
+          return;
         }
-        return res.blob();
+        const req = indexedDB.open("agarsu-img", 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains("blobs")) db.createObjectStore("blobs");
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    return imgIdbPromise;
+  }
+  function idbGetBlob(key) {
+    return openImgIdb().then(db => {
+      if (!db) return null;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction("blobs", "readonly");
+          const req = tx.objectStore("blobs").get(key);
+          req.onsuccess = () => {
+            const row = req.result;
+            const blob = row && row.blob instanceof Blob ? row.blob : null;
+            resolve(blob && blob.size ? blob : null);
+          };
+          req.onerror = () => resolve(null);
+        } catch (e) {
+          resolve(null);
+        }
       });
-      if (!isHttp || !store) return doFetch();
-      return store.match(cacheKey).then(cached => {
-        if (cached) {
-          return cached.blob().catch(() => doFetch());
+    });
+  }
+  function idbPutBlob(key, blob) {
+    return openImgIdb().then(db => {
+      if (!db || !blob || !blob.size) return false;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction("blobs", "readwrite");
+          tx.objectStore("blobs").put({ blob, at: Date.now() }, key);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+          tx.onabort = () => resolve(false);
+        } catch (e) {
+          resolve(false);
         }
-        return doFetch();
-      }).catch(() => doFetch());
-    }).then(blob => URL.createObjectURL(blob));
+      });
+    });
+  }
+  function blobUrlForKey(key, blob) {
+    const prev = persistentBlobUrls.get(key);
+    if (prev) return prev;
+    const url = URL.createObjectURL(blob);
+    persistentBlobUrls.set(key, url);
+    return url;
+  }
+  function responseForCache(res) {
+    const headers = new Headers(res.headers);
+    headers.delete("set-cookie");
+    headers.delete("set-cookie2");
+    headers.delete("vary");
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers
+    });
+  }
+  function loadPersistentImage(requestUrl, cacheKey, force) {
+    const key = /^https?:/i.test(cacheKey) ? cacheKey : resolveAssetUrl(cacheKey);
+    const isHttp = /^https?:/i.test(key);
+    if (!force) {
+      const sessionUrl = persistentBlobUrls.get(key);
+      if (sessionUrl) return Promise.resolve(sessionUrl);
+      const pending = persistentImgInflight.get(key);
+      if (pending) return pending;
+    } else {
+      const old = persistentBlobUrls.get(key);
+      if (old) {
+        try { URL.revokeObjectURL(old); } catch (e) {}
+        persistentBlobUrls.delete(key);
+      }
+    }
+    const job = (async () => {
+      if (isHttp && !force) {
+        const stored = await idbGetBlob(key);
+        if (stored) return blobUrlForKey(key, stored);
+        try {
+          const store = await getPersistentImgStore();
+          if (store) {
+            const cached = await store.match(key, { ignoreVary: true, ignoreSearch: true });
+            if (cached) {
+              const blob = await cached.blob().catch(() => null);
+              if (blob && blob.size) {
+                idbPutBlob(key, blob);
+                return blobUrlForKey(key, blob);
+              }
+              store.delete(key).catch(() => {});
+            }
+          }
+        } catch (e) {}
+      }
+      const res = await fetch(requestUrl);
+      if (!res.ok) throw new Error("image fetch " + res.status);
+      const copy = res.clone();
+      const blob = await res.blob();
+      if (!blob || !blob.size) throw new Error("empty image");
+      if (isHttp) {
+        const saved = await idbPutBlob(key, blob);
+        if (!saved) {
+          getPersistentImgStore().then(store => {
+            if (!store) return;
+            try { store.put(key, responseForCache(copy)).catch(() => {}); } catch (e) {}
+          }).catch(() => {});
+        }
+      }
+      return blobUrlForKey(key, blob);
+    })();
+    if (!force) {
+      persistentImgInflight.set(key, job);
+      job.finally(() => {
+        if (persistentImgInflight.get(key) === job) persistentImgInflight.delete(key);
+      });
+    }
+    return job;
   }
   function getSkinImageUrl(skinId, fallbackId = "4") {
     const id = skinId && String(skinId).trim() || fallbackId;
@@ -13840,7 +13952,34 @@ async function preloadStaticLists(force = false) {
     const resolved = resolveAssetUrl(url);
     if (img.dataset.resolvedSrc === resolved) return;
     img.dataset.resolvedSrc = resolved;
-    img.src = resolved;
+    assignCachedImageSrc(img, resolved);
+  }
+  function assignCachedImageSrc(img, url) {
+    if (!img || !url) return;
+    const resolved = resolveAssetUrl(url);
+    img.dataset.skinUrl = resolved;
+    const cached = loadCachedImage(resolved);
+    const apply = () => {
+      if (!(cached instanceof Image) || !cached.src) return;
+      if (img.src !== cached.src) img.src = cached.src;
+    };
+    if (!(cached instanceof Image)) return;
+    if (cached.complete && cached.src) apply();
+    else cached.addEventListener("load", apply, { once: true });
+  }
+  function assignCachedBackground(el, url) {
+    if (!el || !url) return;
+    const resolved = resolveAssetUrl(url);
+    el.dataset.skinUrl = resolved;
+    const cached = loadCachedImage(resolved);
+    const apply = () => {
+      if (!(cached instanceof Image) || !cached.src) return;
+      const next = 'url("' + cached.src + '")';
+      if (el.style.backgroundImage !== next) el.style.backgroundImage = next;
+    };
+    if (!(cached instanceof Image)) return;
+    if (cached.complete && cached.src) apply();
+    else cached.addEventListener("load", apply, { once: true });
   }
   function skinImageCacheKey(url) {
     return resolveAssetUrl(String(url || "").replace(/([?&])_=\d+/g, "").replace(/\?$/, ""));
@@ -13869,7 +14008,7 @@ async function preloadStaticLists(force = false) {
       skinImageCache.set(baseKey, "error");
       if (baseKey !== skinImageCacheKey(SKIN_FALLBACK_URL)) loadCachedImage(SKIN_FALLBACK_URL);
     };
-    loadPersistentImage(resolveAssetUrl(fetchUrl), baseKey).then(src => {
+    loadPersistentImage(resolveAssetUrl(fetchUrl), baseKey, !!bustRetry).then(src => {
       img.onload = () => skinImageCache.set(baseKey, img);
       img.onerror = onFail;
       img.src = src;
@@ -13977,6 +14116,7 @@ async function preloadStaticLists(force = false) {
   }
   function getElementSkinUrl(el) {
     if (!el) return "";
+    if (el.dataset && el.dataset.skinUrl) return el.dataset.skinUrl;
     if (el.tagName === "IMG") return el.currentSrc || el.getAttribute("src") || el.src || "";
     var inline = extractCssUrl(el.style.backgroundImage);
     if (inline) return inline;
@@ -14151,6 +14291,7 @@ async function preloadStaticLists(force = false) {
     img.crossOrigin = "anonymous";
     img.decoding = "async";
     img.dataset.resolvedSrc = resolved;
+    img.dataset.skinUrl = resolved;
 
     const cached = loadCachedImage(resolved);
     if (!(cached instanceof Image)) {
@@ -14694,7 +14835,7 @@ async function preloadStaticLists(force = false) {
     isInnerImageLoaded = true;
     if ((_a = deps.S) == null ? void 0 : _a.ctx) drawCenterBackground();
   };
-  innerImage.src = getSkinImageUrl("4");
+  assignCachedImageSrc(innerImage, getSkinImageUrl("4"));
   var topPlayerNick = "";
   var topPlayerScore = 0;
   var backgroundWidth = 512;
@@ -14738,7 +14879,7 @@ async function preloadStaticLists(force = false) {
       if (innerImage.dataset.skinSrc !== nextSrc) {
         innerImage.dataset.skinSrc = nextSrc;
         isInnerImageLoaded = false;
-        innerImage.src = nextSrc;
+        assignCachedImageSrc(innerImage, nextSrc);
       }
     } catch (error) {
       console.error("Ошибка обработки данных о топ-1 игроке:", error);
@@ -19366,18 +19507,24 @@ res = await fetchWithTimeout(apiBase + "/challenge", { cache: "no-store" }, 3500
   function loadMonitBgImage(url) {
     if (!url) return Promise.resolve(null);
     if (monitBgImgCache.has(url)) return Promise.resolve(monitBgImgCache.get(url));
+    const cached = loadCachedImage(url);
+    if (!(cached instanceof Image)) {
+      monitBgImgCache.set(url, null);
+      return Promise.resolve(null);
+    }
+    if (cached.complete && cached.naturalWidth) {
+      monitBgImgCache.set(url, cached);
+      return Promise.resolve(cached);
+    }
     return new Promise(resolve => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        monitBgImgCache.set(url, img);
-        resolve(img);
-      };
-      img.onerror = () => {
+      cached.addEventListener("load", () => {
+        monitBgImgCache.set(url, cached.naturalWidth ? cached : null);
+        resolve(cached.naturalWidth ? cached : null);
+      }, { once: true });
+      cached.addEventListener("error", () => {
         monitBgImgCache.set(url, null);
         resolve(null);
-      };
-      img.src = url;
+      }, { once: true });
     });
   }
 
@@ -20001,8 +20148,9 @@ res = await fetchWithTimeout(apiBase + "/challenge", { cache: "no-store" }, 3500
       playerDiv.setAttribute("title", player.time);
       playerDiv.dataset.skinNick = player.nick || "";
       const skinUrl = getSkinUrlForNick(S.skinList, player.nick);
-      const safeSkinUrl = String(skinUrl).replace(/'/g, "%27");
-      playerDiv.innerHTML = `\n        <div>${index + 1}</div>\n        <div>${player.nick}</div>\n        <div>${player.score}</div>\n        <div class="skinswraper" style="background-image:url('${safeSkinUrl}')"></div>\n    `;
+      playerDiv.innerHTML = `\n        <div>${index + 1}</div>\n        <div>${player.nick}</div>\n        <div>${player.score}</div>\n        <div class="skinswraper"></div>\n    `;
+      const skinEl = playerDiv.querySelector(".skinswraper");
+      if (skinEl && skinUrl) assignCachedBackground(skinEl, skinUrl);
       container.appendChild(playerDiv);
     });
   }
@@ -20039,7 +20187,7 @@ res = await fetchWithTimeout(apiBase + "/challenge", { cache: "no-store" }, 3500
           if (innerImage2.dataset.skinSrc !== nextSrc) {
             innerImage2.dataset.skinSrc = nextSrc;
             hooks.isInnerImageLoaded = false;
-            innerImage2.src = nextSrc;
+            assignCachedImageSrc(innerImage2, nextSrc);
           }
         }
         S.topPlayerSkin = skinId || "default";
@@ -20688,18 +20836,27 @@ function updateRegionOnlineTotals(totals) {
     const li = document.createElement("li");
     li.className = "nick-card" + (p.statsBgUrl ? " nick-card--statsbg" : "");
     if (p.statsBgUrl) {
-      li.style.setProperty("--nick-card-bg", `url("${p.statsBgUrl}")`);
+      const bgUrl = p.statsBgUrl;
+      const cachedBg = loadCachedImage(bgUrl);
+      const applyBg = () => {
+        if (cachedBg instanceof Image && cachedBg.src) {
+          li.style.setProperty("--nick-card-bg", `url("${cachedBg.src}")`);
+        }
+      };
+      if (cachedBg instanceof Image && cachedBg.complete && cachedBg.src) applyBg();
+      else if (cachedBg instanceof Image) cachedBg.addEventListener("load", applyBg, { once: true });
     }
     const skinUrl = getSkinUrlForNick2(S, cleanNick);
     const avatar = skinUrl ? Object.assign(document.createElement("img"), {
       className: "skin",
-      src: skinUrl,
+      alt: "",
       loading: "lazy"
     }) : Object.assign(document.createElement("div"), {
       className: "skin skin--empty",
       textContent: label.charAt(0).toUpperCase()
     });
     avatar.dataset.skinNick = nickPart || cleanNick || "";
+    if (skinUrl && avatar.tagName === "IMG") setSkinAvatarFromUrl(avatar, skinUrl);
     const body = document.createElement("div");
     body.className = "nick-card-body";
     const name = document.createElement("div");
@@ -22973,10 +23130,14 @@ onReady(() => {
   function setBackgroundImageIfChanged(el, skinId) {
     if (!el) return;
     const url = getSkinPreviewUrl(skinId);
-    const next = url ? `url(${url})` : "";
-    if (el.dataset.bgSrc === next) return;
-    el.dataset.bgSrc = next;
-    el.style.backgroundImage = next;
+    if (el.dataset.bgSrc === url) return;
+    el.dataset.bgSrc = url;
+    if (!url) {
+      el.dataset.skinUrl = "";
+      el.style.backgroundImage = "";
+      return;
+    }
+    assignCachedBackground(el, url);
   }
   function getPlayers() {
     try {
@@ -23110,7 +23271,8 @@ onReady(() => {
       const card = document.createElement("button");
       card.type = "button";
       card.className = "skins-gallery-card";
-      card.innerHTML = `\n            <img src="https://api.agar.su/skins/${skin.code}.png" alt="" loading="lazy">\n            <h4>${escapeHtml(skin.nick)}</h4>\n        `;
+      card.innerHTML = `\n            <img alt="" loading="lazy">\n            <h4>${escapeHtml(skin.nick)}</h4>\n        `;
+      assignCachedImageSrc(card.querySelector("img"), getSkinPreviewUrl(skin.code));
       card.addEventListener("click", async () => {
         await selectSkin(skin.nick);
         showContent("home");
