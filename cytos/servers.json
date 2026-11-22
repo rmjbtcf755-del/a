@@ -13,7 +13,14 @@
       "id": "megasplit",
       "name": "MegaSplit",
       "servers": [
-        { "id": "ms", "name": "ms#1", "mode": "MEGASPLIT", "host": "ms.agar.su:6001", "api": "https://ms.agar.su:6001", "players": 0 }
+        { "id": "ms", "name": "ms#1", "mode": "MEGASPLIT", "host": "ms.agar.su:6007", "api": "https://ms.agar.su:6007", "players": 0 }
+      ]
+    },
+        {
+      "id": "crazysplit",
+      "name": "CrazySplit",
+      "servers": [
+        { "id": "cs", "name": "cs#1", "mode": "CrazySplit", "host": "ms.agar.su:6008", "api": "https://ms.agar.su:6008", "players": 0 }
       ]
     },
     {
