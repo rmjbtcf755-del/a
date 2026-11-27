@@ -12015,19 +12015,36 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 
   const OPCODE = 169;
   const REFRESH_MS = 2000;
-
-  const ADMIN_NICK = "root";
   const STATS_USER_URL = "https://agar.su/stats/users/?id=";
   const DEFAULT_BAN_SEC = 500;
   const DEFAULT_MUTE_SEC = 300;
+
+  // Must match server modules/staffCaps.js — bits only; server decides which are set.
+  const CAP = {
+    MUTE: 1 << 0,
+    KILL: 1 << 1,
+    CHATLOCK: 1 << 2,
+    GAMELOCK: 1 << 3,
+    XP: 1 << 4,
+    BAN: 1 << 5,
+    NICKMOD: 1 << 6,
+    MASS: 1 << 7,
+    TP: 1 << 8,
+    UIDBAN: 1 << 9,
+    SEE_FULL: 1 << 10,
+    SERVER: 1 << 11,
+    HELP: 1 << 12,
+  };
+
+  const ROLE_BY_BYTE = { 1: "admin", 2: "jmod" };
 
   const state = {
     attached: false,
     S: null,
     api: null,
     role: null,
-    roleFromNick: null,
-    lastCellNick: "",
+    caps: 0,
+    capsReady: false,
     players: [],
     selectedPid: null,
     open: false,
@@ -12037,53 +12054,20 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     showIps: false,
   };
 
+  function hasCap(bit) {
+    return (Number(state.caps) & bit) !== 0;
+  }
+
+  function isStaffLive() {
+    return state.capsReady && Number(state.caps) !== 0 && !!state.role;
+  }
+
   function normalizeStaffNick(nick) {
     return String(nick || "")
       .replace(/<[^>]*>/g, "")
       .split("#")[0]
       .trim()
       .toLowerCase();
-  }
-
-  function readCurrentNick() {
-    const S = state.S;
-    if (!S) return state.lastCellNick || "";
-
-    const cells = S.playerCells;
-    if (cells && cells.length) {
-      for (let i = 0; i < cells.length; i++) {
-        const raw = cells[i] && cells[i].name;
-        if (!raw) continue;
-        const nick = String(raw)
-          .replace(/<[^>]*>/g, "")
-          .split("#")[0]
-          .trim();
-        if (nick) {
-          state.lastCellNick = nick;
-          return nick;
-        }
-      }
-    }
-
-    if (S.ws && S.ws.readyState === 1) return state.lastCellNick || "";
-    state.lastCellNick = "";
-    return "";
-  }
-
-  function isRootNick(nick) {
-    return normalizeStaffNick(nick) === ADMIN_NICK;
-  }
-
-  function roleFromNick(nick) {
-    return isRootNick(nick) ? "admin" : null;
-  }
-
-  function isAdmin() {
-    return state.role === "admin" && isRootLive();
-  }
-
-  function isRootLive() {
-    return isRootNick(readCurrentNick());
   }
 
   function escapeHtml(s) {
@@ -12109,44 +12093,11 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 #agarAdminHead b{font-size:14px}
 #agarAdminRole{margin-left:auto;opacity:.7;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
 @media (max-width:760px){
-  #agarAdminToggle{
-    position:fixed !important;
-    right:10px !important;
-    left:auto !important;
-    top:auto !important;
-    bottom:96px !important;
-    z-index:10060 !important;
-    padding:12px 16px;
-    font-size:15px;
-    border:2px solid rgba(150,190,255,.85);
-    background:rgba(28,72,170,.98);
-    box-shadow:0 6px 22px rgba(0,0,0,.55), 0 0 0 3px rgba(60,120,255,.25);
-  }
-  #agarAdminToggle.on{
-    background:rgba(48,110,230,.98);
-    border-color:#fff;
-  }
-  #agarAdminRoot{
-    position:fixed !important;
-    right:8px !important;
-    left:8px !important;
-    top:auto !important;
-    bottom:148px !important;
-    width:auto !important;
-    max-width:none !important;
-    z-index:10060 !important;
-  }
-  #agarAdminPanel{
-    max-height:min(58vh,520px);
-    border-width:2px;
-    border-color:rgba(140,180,255,.35);
-    -webkit-overflow-scrolling:touch;
-  }
-  .aa-btns button,.aa-row button,.aa-list .aa-kick{
-    min-height:34px;
-    padding:8px 12px;
-    font-size:13px;
-  }
+  #agarAdminToggle{position:fixed !important;right:10px !important;left:auto !important;top:auto !important;bottom:96px !important;z-index:10060 !important;padding:12px 16px;font-size:15px;border:2px solid rgba(150,190,255,.85);background:rgba(28,72,170,.98);box-shadow:0 6px 22px rgba(0,0,0,.55), 0 0 0 3px rgba(60,120,255,.25)}
+  #agarAdminToggle.on{background:rgba(48,110,230,.98);border-color:#fff}
+  #agarAdminRoot{position:fixed !important;right:8px !important;left:8px !important;top:auto !important;bottom:148px !important;width:auto !important;max-width:none !important;z-index:10060 !important}
+  #agarAdminPanel{max-height:min(58vh,520px);border-width:2px;border-color:rgba(140,180,255,.35);-webkit-overflow-scrolling:touch}
+  .aa-btns button,.aa-row button,.aa-list .aa-kick{min-height:34px;padding:8px 12px;font-size:13px}
   .aa-list th,.aa-list td{padding:8px 8px;font-size:13px}
   .aa-list .aa-nick{max-width:42vw}
 }
@@ -12159,13 +12110,11 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 .aa-btns button,.aa-row button{font:inherit;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#eaf1ff;padding:5px 9px;border-radius:7px;cursor:pointer}
 .aa-btns button:hover,.aa-row button:hover{background:rgba(80,130,220,.35)}
 .aa-btns button:disabled,.aa-row button:disabled{opacity:.35;cursor:not-allowed}
-.aa-btns button.warn{border-color:rgba(255,140,80,.35);background:rgba(180,70,20,.22)}
-.aa-btns button.danger{border-color:rgba(255,80,80,.4);background:rgba(160,30,30,.28)}
+.aa-btns button.warn,.aa-row button.warn{border-color:rgba(255,140,80,.35);background:rgba(180,70,20,.22)}
+.aa-btns button.danger,.aa-row button.danger{border-color:rgba(255,80,80,.4);background:rgba(160,30,30,.28)}
 .aa-inp{width:72px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.35);color:#eaf1ff;padding:5px 7px;border-radius:7px;font:inherit}
 .aa-inp.wide{width:120px}
-.aa-inp.grow{flex:1;min-width:100px;width:auto}
 .aa-sel{padding:8px 12px;font-size:12px;background:rgba(40,70,140,.18);border-bottom:1px solid rgba(255,255,255,.07)}
-.aa-sel strong{font-weight:600}
 .aa-list{max-height:28vh;overflow:auto}
 .aa-list table{width:100%;border-collapse:collapse}
 .aa-list th,.aa-list td{padding:6px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
@@ -12179,18 +12128,17 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 .aa-list .aa-nick{overflow:hidden;text-overflow:ellipsis;max-width:140px}
 .aa-list .aa-kick,.aa-list .aa-ban{flex-shrink:0;font:inherit;padding:3px 8px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600}
 .aa-list .aa-kick{border:1px solid rgba(255,140,80,.4);background:rgba(180,70,20,.28);color:#ffe8d8}
-.aa-list .aa-kick:hover{background:rgba(220,90,30,.45)}
 .aa-list .aa-ban{border:1px solid rgba(255,80,80,.45);background:rgba(160,30,30,.32);color:#ffd0d0}
-.aa-list .aa-ban:hover{background:rgba(200,40,40,.5)}
 .aa-list .aa-acts{display:flex;gap:4px}
-.aa-list .aa-ip{font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.aa-list .aa-ip{font-variant-numeric:tabular-nums}
 .aa-list .aa-ip.masked{opacity:.55}
 .aa-ip-toggle{font:inherit;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#eaf1ff;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:11px;margin-left:auto}
 .aa-ip-toggle.on{background:rgba(36,86,180,.55);border-color:rgba(140,180,255,.45)}
 .aa-list-tools{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.aa-filter{flex:1;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.3);color:#eaf1ff;padding:6px 8px;border-radius:7px;font:inherit;margin-bottom:0}
+.aa-filter{flex:1;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.3);color:#eaf1ff;padding:6px 8px;border-radius:7px;font:inherit}
 .aa-hint{font-size:11px;opacity:.5;margin-top:4px}
 #agarAdminFoot{padding:8px 12px;font-size:11px;opacity:.5}
+.aa-hidden{display:none !important}
 `;
     document.head.appendChild(style);
   }
@@ -12208,7 +12156,6 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     const toggle = document.getElementById("agarAdminToggle");
     const root = document.getElementById("agarAdminRoot");
     if (!toggle) return;
-
     if (window.innerWidth <= 760) {
       toggle.style.right = "";
       toggle.style.top = "";
@@ -12223,18 +12170,15 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       }
       return;
     }
-
     let right = 178;
     let top = 10;
     const gap = 8;
-
     const anchor =
       lb && getComputedStyle(lb).display !== "none" && lb.offsetParent !== null
         ? lb
         : onLb && getComputedStyle(onLb).display !== "none"
           ? onLb
           : null;
-
     if (anchor) {
       const cs = getComputedStyle(anchor);
       const w = anchor.getBoundingClientRect().width || parseFloat(cs.minWidth) || 150;
@@ -12243,7 +12187,6 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       right = Math.round((Number.isFinite(r) ? r : 10) + w + gap);
       top = Number.isFinite(t) ? Math.round(t) : 10;
     }
-
     toggle.style.right = right + "px";
     toggle.style.top = top + "px";
     toggle.style.left = "auto";
@@ -12261,8 +12204,8 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     const toggle = document.createElement("button");
     toggle.id = "agarAdminToggle";
     toggle.type = "button";
-    toggle.textContent = "Admin";
-    toggle.title = "Админ-панель";
+    toggle.textContent = "Staff";
+    toggle.title = "Панель модерации";
     toggle.style.display = "none";
 
     const root = document.createElement("div");
@@ -12270,20 +12213,25 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     root.innerHTML = `
       <div id="agarAdminPanel">
         <div id="agarAdminHead">
-          <b>Админ · root</b>
-          <span id="agarAdminRole">root</span>
+          <b id="aaHeadTitle">Staff</b>
+          <span id="agarAdminRole">—</span>
         </div>
 
         <div class="aa-sec" id="aaGlobalSec">
-          <h4>Общее · сервер</h4>
+          <h4>Общее</h4>
           <div class="aa-btns" id="aaGlobalLists"></div>
           <div class="aa-row" style="margin-top:8px">
             <div class="aa-btns" id="aaGlobalActs"></div>
           </div>
-          <div class="aa-row" style="margin-top:8px">
+          <div class="aa-row aa-cap" data-cap="CHATLOCK" style="margin-top:8px">
             <label>ChatLock</label>
-            <input class="aa-inp" id="aaChatLockSec" type="number" min="0" value="1000" title="Секунды chatlock" />
+            <input class="aa-inp" id="aaChatLockSec" type="number" min="0" value="1000" />
             <button type="button" id="aaChatLockBtn">ChatLock</button>
+          </div>
+          <div class="aa-row aa-cap" data-cap="GAMELOCK" style="margin-top:8px">
+            <label>GameLock</label>
+            <input class="aa-inp" id="aaGameLockXp" type="number" min="0" value="0" />
+            <button type="button" id="aaGameLockBtn">GameLock</button>
           </div>
         </div>
 
@@ -12291,15 +12239,21 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
           <h4>Игроки онлайн</h4>
           <div class="aa-list-tools">
             <input class="aa-filter" id="aaFilter" type="search" placeholder="Фильтр: ник или ID…" />
-            <button type="button" class="aa-ip-toggle" id="aaIpToggle" title="Показать / скрыть IP">IP: скрыты</button>
+            <button type="button" class="aa-ip-toggle aa-cap" data-cap="SEE_FULL" id="aaIpToggle" title="Показать / скрыть IP">IP: скрыты</button>
           </div>
           <div class="aa-list" id="agarAdminList">
             <table>
-              <thead><tr><th>ID</th><th>Ник</th><th></th><th>Cells</th><th>Score</th><th>ЛК</th><th>IP</th></tr></thead>
+              <thead><tr>
+                <th>ID</th><th>Ник</th><th></th>
+                <th class="aa-cap" data-cap="SEE_FULL">Cells</th>
+                <th class="aa-cap" data-cap="SEE_FULL">Score</th>
+                <th class="aa-cap" data-cap="SEE_FULL">ЛК</th>
+                <th class="aa-cap" data-cap="SEE_FULL">IP</th>
+              </tr></thead>
               <tbody></tbody>
             </table>
           </div>
-          <div class="aa-hint">Kick / Ban в списке · ПКМ по клетке или по нику в чате · пасс только на сервер</div>
+          <div class="aa-hint">Доступные действия приходят с сервера · список ~2с</div>
         </div>
 
         <div class="aa-sel" id="agarAdminSel">Игрок не выбран</div>
@@ -12308,16 +12262,20 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
           <h4 id="aaPlayerTitle">Действия с игроком</h4>
 
           <div class="aa-row">
-            <label>Бан сек</label>
-            <input class="aa-inp" id="aaBanSec" type="number" min="1" value="500" />
-            <button type="button" class="warn" data-act="ban">Ban</button>
-            <label>Mute сек</label>
-            <input class="aa-inp" id="aaMuteSec" type="number" min="0" value="300" />
-            <button type="button" data-act="mute">Mute</button>
-            <button type="button" data-act="unmute">Unmute</button>
+            <span class="aa-cap" data-cap="BAN" style="display:contents">
+              <label>Бан сек</label>
+              <input class="aa-inp" id="aaBanSec" type="number" min="1" value="500" />
+              <button type="button" class="warn" data-act="ban">Ban</button>
+            </span>
+            <span class="aa-cap" data-cap="MUTE" style="display:contents">
+              <label>Mute сек</label>
+              <input class="aa-inp" id="aaMuteSec" type="number" min="0" value="300" />
+              <button type="button" data-act="mute">Mute</button>
+              <button type="button" data-act="unmute">Unmute</button>
+            </span>
           </div>
 
-          <div class="aa-row">
+          <div class="aa-row aa-cap" data-cap="NICKMOD">
             <label>NickLock</label>
             <input class="aa-inp" id="aaNickLockSec" type="number" min="1" value="500" />
             <button type="button" data-act="nicklock">Lock</button>
@@ -12328,22 +12286,34 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 
           <div class="aa-row" id="aaLkBanRow">
             <button type="button" data-act="lk">Открыть ЛК</button>
-            <button type="button" class="danger" data-act="uidban">Бан ЛК</button>
-            <button type="button" data-act="uidunban">Разбан ЛК</button>
+            <span class="aa-cap" data-cap="UIDBAN" style="display:contents">
+              <button type="button" class="danger" data-act="uidban">Бан ЛК</button>
+              <button type="button" data-act="uidunban">Разбан ЛК</button>
+            </span>
+          </div>
+
+          <div class="aa-row aa-cap" data-cap="XP">
+            <label>XP</label>
+            <input class="aa-inp wide" id="aaXp" type="number" min="0" value="0" />
+            <button type="button" data-act="xp">Set XP</button>
           </div>
 
           <div class="aa-row" id="aaAdminPlayerRows">
-            <label>Масса</label>
-            <input class="aa-inp" id="aaMass" type="number" min="1" value="500" />
-            <button type="button" data-act="mass">Set mass</button>
-            <label>Split</label>
-            <input class="aa-inp" id="aaSplit" type="number" min="1" max="128" value="1" />
-            <button type="button" data-act="split">Split</button>
-            <button type="button" data-act="merge">Merge</button>
-            <button type="button" class="danger" data-act="kill">Kill</button>
+            <span class="aa-cap" data-cap="MASS" style="display:contents">
+              <label>Масса</label>
+              <input class="aa-inp" id="aaMass" type="number" min="1" value="500" />
+              <button type="button" data-act="mass">Set mass</button>
+              <label>Split</label>
+              <input class="aa-inp" id="aaSplit" type="number" min="1" max="128" value="1" />
+              <button type="button" data-act="split">Split</button>
+              <button type="button" data-act="merge">Merge</button>
+            </span>
+            <span class="aa-cap" data-cap="KILL" style="display:contents">
+              <button type="button" class="danger" data-act="kill">Kill</button>
+            </span>
           </div>
 
-          <div class="aa-row" id="aaTpRow">
+          <div class="aa-row aa-cap" data-cap="TP" id="aaTpRow">
             <label>TP X</label>
             <input class="aa-inp wide" id="aaTpX" type="number" value="0" />
             <label>Y</label>
@@ -12353,7 +12323,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
           </div>
         </div>
 
-        <div id="agarAdminFoot">Онлайн: 0 · команды в чат · список ~2с</div>
+        <div id="agarAdminFoot">Онлайн: 0 · ждём capabilities с сервера</div>
       </div>`;
 
     const lb = document.getElementById("leaderboard");
@@ -12386,7 +12356,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
         e.preventDefault();
         e.stopPropagation();
         const pid = Number(kickBtn.getAttribute("data-kick-pid"));
-        if (Number.isFinite(pid)) sendCmd(`/kick ${pid}`);
+        if (Number.isFinite(pid) && hasCap(CAP.BAN)) sendCmd(`/kick ${pid}`);
         return;
       }
       const banBtn = e.target.closest("[data-ban-pid]");
@@ -12394,7 +12364,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
         e.preventDefault();
         e.stopPropagation();
         const pid = Number(banBtn.getAttribute("data-ban-pid"));
-        if (Number.isFinite(pid)) sendCmd(`/ban ${pid} ${val("aaBanSec", DEFAULT_BAN_SEC)}`);
+        if (Number.isFinite(pid) && hasCap(CAP.BAN)) sendCmd(`/ban ${pid} ${val("aaBanSec", DEFAULT_BAN_SEC)}`);
         return;
       }
       const lkBtn = e.target.closest("[data-lk-pid]");
@@ -12413,8 +12383,26 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       runPlayerAct(btn.getAttribute("data-act"));
     });
 
+    const chatLockBtn = root.querySelector("#aaChatLockBtn");
+    if (chatLockBtn) {
+      chatLockBtn.addEventListener("click", () => {
+        if (!hasCap(CAP.CHATLOCK)) return;
+        const sec = Math.max(0, val("aaChatLockSec", 1000) | 0);
+        sendCmd(`/chatlock ${sec}`);
+      });
+    }
+    const gameLockBtn = root.querySelector("#aaGameLockBtn");
+    if (gameLockBtn) {
+      gameLockBtn.addEventListener("click", () => {
+        if (!hasCap(CAP.GAMELOCK)) return;
+        const xp = Math.max(0, val("aaGameLockXp", 0) | 0);
+        sendCmd(`/gamelock ${xp}`);
+      });
+    }
+
     state.el = { root, toggle, panel: root.querySelector("#agarAdminPanel") };
     positionNearLeaderboard();
+    applyCapsToUi();
     renderGlobals();
     renderPlayerChrome();
     return state.el;
@@ -12426,7 +12414,6 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     ui.panel.classList.toggle("open", state.open);
     ui.toggle.classList.toggle("on", state.open);
     if (state.open) {
-      syncStaffFromNick();
       requestPanel();
       fillTpFromMe(false);
     }
@@ -12471,67 +12458,83 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
   function runPlayerAct(act) {
     const p = needPlayer();
     if (!p) return;
-
     switch (act) {
       case "kick":
-        sendCmd(`/kick ${p.pid}`);
+        if (hasCap(CAP.BAN)) sendCmd(`/kick ${p.pid}`);
         break;
       case "ban":
-        sendCmd(`/ban ${p.pid} ${val("aaBanSec", 500)}`);
+        if (hasCap(CAP.BAN)) sendCmd(`/ban ${p.pid} ${val("aaBanSec", 500)}`);
         break;
       case "mute":
-        sendCmd(`/mute ${p.pid} ${val("aaMuteSec", 300)}`);
+        if (hasCap(CAP.MUTE)) sendCmd(`/mute ${p.pid} ${val("aaMuteSec", 300)}`);
         break;
       case "unmute":
-        sendCmd(`/unmute ${p.pid}`);
+        if (hasCap(CAP.MUTE)) sendCmd(`/unmute ${p.pid}`);
         break;
       case "nicklock":
-        sendCmd(`/nicklock ${p.pid} ${val("aaNickLockSec", 500)}`);
+        if (hasCap(CAP.NICKMOD)) sendCmd(`/nicklock ${p.pid} ${val("aaNickLockSec", 500)}`);
         break;
       case "nickunlock":
-        sendCmd(`/nickunlock ${p.pid}`);
+        if (hasCap(CAP.NICKMOD)) sendCmd(`/nickunlock ${p.pid}`);
         break;
       case "nickban":
-        if (!p.nick) return;
-        sendCmd(`/nickban ${p.nick}`);
+        if (hasCap(CAP.NICKMOD) && p.nick) sendCmd(`/nickban ${p.nick}`);
         break;
       case "unnickban":
-        if (!p.nick) return;
-        sendCmd(`/unnickban ${p.nick}`);
+        if (hasCap(CAP.NICKMOD) && p.nick) sendCmd(`/unnickban ${p.nick}`);
         break;
       case "uidban":
-        if (!p.lkUid) return;
-        sendCmd(`/uidban ${p.lkUid}`);
+        if (hasCap(CAP.UIDBAN) && p.lkUid) sendCmd(`/uidban ${p.lkUid}`);
         break;
       case "uidunban":
-        if (!p.lkUid) return;
-        sendCmd(`/uidunban ${p.lkUid}`);
+        if (hasCap(CAP.UIDBAN) && p.lkUid) sendCmd(`/uidunban ${p.lkUid}`);
         break;
       case "lk":
         openPlayerLk(p);
         break;
+      case "xp":
+        if (hasCap(CAP.XP)) sendCmd(`/xp ${p.pid} ${val("aaXp", 0)}`);
+        break;
       case "mass":
-        sendCmd(`/mass ${p.pid} ${val("aaMass", 500)}`);
+        if (hasCap(CAP.MASS)) sendCmd(`/mass ${p.pid} ${val("aaMass", 500)}`);
         break;
       case "split":
-        sendCmd(`/split ${p.pid} ${val("aaSplit", 1)}`);
+        if (hasCap(CAP.MASS)) sendCmd(`/split ${p.pid} ${val("aaSplit", 1)}`);
         break;
       case "merge":
-        sendCmd(`/merge ${p.pid}`);
+        if (hasCap(CAP.MASS)) sendCmd(`/merge ${p.pid}`);
         break;
       case "kill":
-        sendCmd(`/kill ${p.pid}`);
+        if (hasCap(CAP.KILL)) sendCmd(`/kill ${p.pid}`);
         break;
       case "tp":
-        sendCmd(`/tp ${p.pid} ${val("aaTpX", 0)} ${val("aaTpY", 0)}`);
+        if (hasCap(CAP.TP)) sendCmd(`/tp ${p.pid} ${val("aaTpX", 0)} ${val("aaTpY", 0)}`);
         break;
       case "tpMe":
+        if (!hasCap(CAP.TP)) break;
         fillTpFromMe(true);
         sendCmd(`/tp ${p.pid} ${val("aaTpX", 0)} ${val("aaTpY", 0)}`);
         break;
       default:
         break;
     }
+  }
+
+  function applyCapsToUi() {
+    document.querySelectorAll(".aa-cap[data-cap]").forEach((el) => {
+      const name = el.getAttribute("data-cap");
+      const bit = CAP[name];
+      const on = bit != null && hasCap(bit);
+      el.classList.toggle("aa-hidden", !on);
+      if (el.style && el.style.display === "contents") {
+        /* keep display:contents when visible */
+        if (!on) el.classList.add("aa-hidden");
+      }
+    });
+    const title = document.getElementById("aaHeadTitle");
+    if (title) title.textContent = state.role === "jmod" ? "JMod" : state.role === "admin" ? "Admin" : "Staff";
+    const toggle = document.getElementById("agarAdminToggle");
+    if (toggle) toggle.textContent = state.role === "jmod" ? "JMod" : "Admin";
   }
 
   function renderGlobals() {
@@ -12541,13 +12544,13 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     lists.innerHTML = "";
     acts.innerHTML = "";
 
-    const listCmds = [
-      { label: "Playerlist", cmd: "/playerlist" },
-      { label: "Banlist", cmd: "/banlist" },
-      { label: "Nickbans", cmd: "/nickbanlist" },
-      { label: "Mutelist", cmd: "/mutelist" },
-      { label: "Help", cmd: "/help" },
-    ];
+    const listCmds = [];
+    if (hasCap(CAP.SERVER)) listCmds.push({ label: "Playerlist", cmd: "/playerlist" });
+    if (hasCap(CAP.BAN)) listCmds.push({ label: "Banlist", cmd: "/banlist" });
+    if (hasCap(CAP.NICKMOD)) listCmds.push({ label: "Nickbans", cmd: "/nickbanlist" });
+    if (hasCap(CAP.MUTE)) listCmds.push({ label: "Mutelist", cmd: "/mutelist" });
+    if (hasCap(CAP.HELP)) listCmds.push({ label: "Help", cmd: "/help" });
+
     listCmds.forEach((a) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -12562,27 +12565,16 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     ref.addEventListener("click", () => requestPanel());
     lists.appendChild(ref);
 
-    const serverActs = [
-      { label: "Status", cmd: "/status" },
-      { label: "Pause", cmd: "/pause" },
-    ];
-    serverActs.forEach((a) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = a.label;
-      if (a.danger) b.className = "danger";
-      b.addEventListener("click", () => sendCmd(a.cmd));
-      acts.appendChild(b);
-    });
-
-    const chatLockBtn = document.getElementById("aaChatLockBtn");
-    if (chatLockBtn && !chatLockBtn._aaBound) {
-      chatLockBtn._aaBound = true;
-      chatLockBtn.addEventListener("click", () => {
-        const sec = Math.max(0, val("aaChatLockSec", 1000) | 0);
-        const inp = document.getElementById("aaChatLockSec");
-        if (inp) inp.value = String(sec);
-        sendCmd(`/chatlock ${sec}`);
+    if (hasCap(CAP.SERVER)) {
+      [
+        { label: "Status", cmd: "/status" },
+        { label: "Pause", cmd: "/pause" },
+      ].forEach((a) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = a.label;
+        b.addEventListener("click", () => sendCmd(a.cmd));
+        acts.appendChild(b);
       });
     }
   }
@@ -12599,19 +12591,11 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     if (!btn) return;
     btn.classList.toggle("on", !!state.showIps);
     btn.textContent = state.showIps ? "IP: показаны" : "IP: скрыты";
-    btn.style.display = "";
   }
 
   function renderPlayerChrome() {
     syncIpToggleUi();
-
-    const adminRows = document.getElementById("aaAdminPlayerRows");
-    const tpRow = document.getElementById("aaTpRow");
-    const lkBanRow = document.getElementById("aaLkBanRow");
-    if (adminRows) adminRows.style.display = "flex";
-    if (tpRow) tpRow.style.display = "flex";
-    if (lkBanRow) lkBanRow.style.display = "flex";
-
+    applyCapsToUi();
     const p = selected();
     const title = document.getElementById("aaPlayerTitle");
     if (title) {
@@ -12623,20 +12607,19 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     if (sel) {
       if (!p) sel.innerHTML = "Игрок не выбран";
       else {
-        const ipRaw = p.ip && p.ip !== "null" ? p.ip : "";
-        const ip =
-          ipRaw
-            ? ` · IP ${escapeHtml(state.showIps ? ipRaw : "****")}`
-            : "";
-        const lk = p.lkUid ? ` · ЛК ${escapeHtml(String(p.lkUid))}` : "";
+        const see = hasCap(CAP.SEE_FULL);
+        const ipRaw = see && p.ip && p.ip !== "null" ? p.ip : "";
+        const ip = ipRaw ? ` · IP ${escapeHtml(state.showIps ? ipRaw : "****")}` : "";
+        const lk = see && p.lkUid ? ` · ЛК ${escapeHtml(String(p.lkUid))}` : "";
         const xy =
-          Number.isFinite(p.mx) && Number.isFinite(p.my)
+          see && Number.isFinite(p.mx) && Number.isFinite(p.my)
             ? ` · ${p.mx | 0},${p.my | 0}`
             : "";
-        sel.innerHTML = `Выбран: <strong>${escapeHtml(p.nick || "?")}</strong> · #${p.pid} · cells ${p.cells} · score ${p.score}${lk}${xy}${ip}`;
+        const cells = see ? ` · cells ${p.cells}` : "";
+        const score = see ? ` · score ${p.score}` : "";
+        sel.innerHTML = `Выбран: <strong>${escapeHtml(p.nick || "?")}</strong> · #${p.pid}${cells}${score}${lk}${xy}${ip}`;
       }
     }
-
     const disabled = !p;
     document.querySelectorAll("#aaPlayerSec [data-act]").forEach((btn) => {
       btn.disabled = disabled;
@@ -12648,19 +12631,22 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     if (!tb) return;
     tb.innerHTML = "";
     const f = state.filter;
+    const see = hasCap(CAP.SEE_FULL);
     const rows = state.players
       .slice()
       .filter((p) => {
         if (!f) return true;
-        return String(p.pid).includes(f) || String(p.lkUid || "").includes(f) || String(p.nick || "").toLowerCase().includes(f);
+        return (
+          String(p.pid).includes(f) ||
+          String(p.lkUid || "").includes(f) ||
+          String(p.nick || "").toLowerCase().includes(f)
+        );
       })
-      .sort((a, b) => b.score - a.score || a.pid - b.pid);
+      .sort((a, b) => (see ? b.score - a.score : 0) || a.pid - b.pid);
 
     rows.forEach((p) => {
       const tr = document.createElement("tr");
       if (p.pid === state.selectedPid) tr.className = "sel";
-      const ipText = formatIp(p.ip);
-      const ipClass = state.showIps ? "aa-ip" : "aa-ip masked";
 
       const tdPid = document.createElement("td");
       tdPid.className = "pid";
@@ -12678,45 +12664,50 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       const tdKick = document.createElement("td");
       const acts = document.createElement("div");
       acts.className = "aa-acts";
-      const kick = document.createElement("button");
-      kick.type = "button";
-      kick.className = "aa-kick";
-      kick.textContent = "Kick";
-      kick.title = `Кик ${p.nick || p.pid}`;
-      kick.setAttribute("data-kick-pid", String(p.pid));
-      const ban = document.createElement("button");
-      ban.type = "button";
-      ban.className = "aa-ban";
-      ban.textContent = "Ban";
-      ban.title = `Бан ${p.nick || p.pid}`;
-      ban.setAttribute("data-ban-pid", String(p.pid));
-      acts.appendChild(kick);
-      acts.appendChild(ban);
+      if (hasCap(CAP.BAN)) {
+        const kick = document.createElement("button");
+        kick.type = "button";
+        kick.className = "aa-kick";
+        kick.textContent = "Kick";
+        kick.setAttribute("data-kick-pid", String(p.pid));
+        const ban = document.createElement("button");
+        ban.type = "button";
+        ban.className = "aa-ban";
+        ban.textContent = "Ban";
+        ban.setAttribute("data-ban-pid", String(p.pid));
+        acts.appendChild(kick);
+        acts.appendChild(ban);
+      }
       tdKick.appendChild(acts);
 
       const tdCells = document.createElement("td");
-      tdCells.textContent = String(p.cells);
+      tdCells.className = "aa-cap";
+      tdCells.setAttribute("data-cap", "SEE_FULL");
+      tdCells.textContent = see ? String(p.cells) : "";
 
       const tdScore = document.createElement("td");
-      tdScore.className = "score";
-      tdScore.textContent = String(p.score);
+      tdScore.className = "score aa-cap";
+      tdScore.setAttribute("data-cap", "SEE_FULL");
+      tdScore.textContent = see ? String(p.score) : "";
 
       const tdLk = document.createElement("td");
-      if (p.lkUid) {
+      tdLk.className = "aa-cap";
+      tdLk.setAttribute("data-cap", "SEE_FULL");
+      if (see && p.lkUid) {
         const lk = document.createElement("button");
         lk.type = "button";
         lk.className = "aa-kick";
         lk.textContent = String(p.lkUid);
-        lk.title = "Открыть ЛК";
         lk.setAttribute("data-lk-pid", String(p.pid));
         tdLk.appendChild(lk);
-      } else {
+      } else if (see) {
         tdLk.textContent = "—";
       }
 
       const tdIp = document.createElement("td");
-      tdIp.className = ipClass;
-      tdIp.textContent = ipText;
+      tdIp.className = (state.showIps ? "aa-ip" : "aa-ip masked") + " aa-cap";
+      tdIp.setAttribute("data-cap", "SEE_FULL");
+      tdIp.textContent = see ? formatIp(p.ip) : "";
 
       tr.appendChild(tdPid);
       tr.appendChild(tdNick);
@@ -12736,52 +12727,45 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       tb.appendChild(tr);
     });
 
+    applyCapsToUi();
     const roleEl = document.getElementById("agarAdminRole");
-    if (roleEl) roleEl.textContent = "root";
+    if (roleEl) roleEl.textContent = state.role || "—";
     const foot = document.getElementById("agarAdminFoot");
-    if (foot) foot.textContent = `Онлайн: ${state.players.length} · команды в чат · список ~2с`;
+    if (foot) {
+      foot.textContent = `Онлайн: ${state.players.length} · role ${state.role || "—"} · caps 0x${(state.caps >>> 0).toString(16)}`;
+    }
     renderPlayerChrome();
-  }
-
-  function syncStaffFromNick() {
-    const nickRole = roleFromNick(readCurrentNick());
-    state.roleFromNick = nickRole;
-    if (nickRole) {
-      state.role = nickRole;
-      if (!state.el) buildUi();
-      state.el.toggle.style.display = "block";
-      positionNearLeaderboard();
-      const roleEl = document.getElementById("agarAdminRole");
-      if (roleEl) roleEl.textContent = "root";
-      renderGlobals();
-      renderPlayerChrome();
-      return;
-    }
-    hideStaffUi();
-  }
-
-  function applyAdminData(data) {
-    if (!data) return;
-    if (!isRootLive()) {
-      hideStaffUi();
-      return;
-    }
-    state.role = "admin";
-    state.players = Array.isArray(data.players) ? data.players : [];
-    if (!state.el) buildUi();
-    state.el.toggle.style.display = "block";
-    positionNearLeaderboard();
-    renderGlobals();
-    renderList();
   }
 
   function hideStaffUi() {
     state.role = null;
+    state.caps = 0;
+    state.capsReady = false;
     state.players = [];
     if (state.el) {
       state.el.toggle.style.display = "none";
       if (state.open) setOpen(false);
     }
+  }
+
+  function applyAdminData(data) {
+    if (!data) return;
+    const role = data.role || null;
+    const caps = Number(data.caps) >>> 0;
+    if (!role || !caps) {
+      hideStaffUi();
+      return;
+    }
+    state.role = role;
+    state.caps = caps;
+    state.capsReady = true;
+    state.players = Array.isArray(data.players) ? data.players : [];
+    if (!state.el) buildUi();
+    state.el.toggle.style.display = "block";
+    positionNearLeaderboard();
+    applyCapsToUi();
+    renderGlobals();
+    renderList();
   }
 
   function onAdminData(packet) {
@@ -12842,20 +12826,40 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     };
 
     let role = null;
-    let count = -1;
+    let caps = 0;
     const mark = reader.offset;
+
+    // protocol v1: ver=1, role byte, caps uint32, then players (no count)
     if (reader.canRead) {
-      const maybeRole = reader.view.getUint8(reader.offset);
-      if (maybeRole >= 1 && maybeRole <= 3 && reader.offset + 3 <= reader.view.byteLength) {
-        const maybeCount = reader.view.getUint16(reader.offset + 1, true);
-        if (maybeCount <= 512) {
+      const ver = reader.view.getUint8(reader.offset);
+      if (ver === 1 && reader.offset + 6 <= reader.view.byteLength) {
+        reader.offset += 1;
+        const roleByte = reader.uint8();
+        caps = reader.uint32() >>> 0;
+        role = ROLE_BY_BYTE[roleByte] || null;
+      } else {
+        // legacy: optional role byte 1..3 then optional count uint16
+        reader.offset = mark;
+        if (reader.canRead) {
+          const maybeRole = reader.view.getUint8(reader.offset);
+          if (maybeRole >= 1 && maybeRole <= 3 && reader.offset + 3 <= reader.view.byteLength) {
+            const maybeCount = reader.view.getUint16(reader.offset + 1, true);
+            if (maybeCount <= 512) {
+              role = ROLE_BY_BYTE[maybeRole] || "admin";
+              caps = role === "admin" ? 0xffffffff : (CAP.MUTE | CAP.KILL | CAP.CHATLOCK | CAP.GAMELOCK | CAP.XP | CAP.HELP);
+              reader.offset += 1;
+              reader.uint16(); // discard count — still stream players until EOF for safety
+            }
+          }
+        }
+        if (!role) {
+          reader.offset = mark;
+          // completely legacy stream of players only → treat as full admin (old servers)
           role = "admin";
-          reader.offset += 1;
-          count = reader.uint16();
+          caps = 0xffffffff;
         }
       }
     }
-    if (count < 0) reader.offset = mark;
 
     const players = [];
     const readOne = () => {
@@ -12873,12 +12877,8 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       });
       return true;
     };
-    if (count >= 0) {
-      for (let i = 0; i < count; i++) if (!readOne()) break;
-    } else {
-      while (reader.canRead) if (!readOne()) break;
-    }
-    if (!role) role = "admin";
+    while (reader.canRead) if (!readOne()) break;
+
     for (const p of players) {
       const m = String(p.nick || "").match(/^(.*) \[лк:(\d+)\]$/);
       if (!m) {
@@ -12888,7 +12888,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
       p.nick = m[1];
       p.lkUid = Number(m[2]);
     }
-    applyAdminData({ role, players });
+    applyAdminData({ role, caps, players });
   }
 
   function findPlayerByTarget(pid, nick) {
@@ -12908,8 +12908,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
   function resolvePid(pid, nick) {
     const p = findPlayerByTarget(pid, nick);
     if (p && p.pid) return p.pid;
-    const id = Number(pid) || 0;
-    return id || 0;
+    return Number(pid) || 0;
   }
 
   function openPlayerLk(p, nick) {
@@ -12922,13 +12921,11 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     if (state.S && typeof global.__agarsuOpenStatsForName === "function") {
       if (global.__agarsuOpenStatsForName(state.S, name)) return;
     }
-    if (name) {
-      global.open(STATS_USER_URL + encodeURIComponent(name), "_blank", "noopener");
-    }
+    if (name) global.open(STATS_USER_URL + encodeURIComponent(name), "_blank", "noopener");
   }
 
   function selectInPanel(pid) {
-    if (!isRootLive()) return;
+    if (!isStaffLive()) return;
     if (!state.el) buildUi();
     state.selectedPid = pid;
     setOpen(true);
@@ -12993,63 +12990,15 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
   }
 
   function targetMenuItems(target) {
+    if (!isStaffLive()) return [];
     const pid = resolvePid(target && target.pid, target && target.nick);
     const nick = String((target && target.nick) || "").replace(/<[^>]*>/g, "").split("#")[0].trim();
     const p = findPlayerByTarget(pid, nick);
-    const items = [
-      { label: "Админ · root", className: "chat-context-sep", onClick: () => {} },
-      {
-        label: pid ? `Kick #${pid}` : "Kick",
-        className: "chat-context-admin",
-        onClick: () => {
-          if (pid) sendCmd(`/kick ${pid}`);
-        },
-      },
-      {
-        label: `Ban ${DEFAULT_BAN_SEC}с`,
-        className: "chat-context-admin danger",
-        onClick: () => {
-          if (pid) sendCmd(`/ban ${pid} ${DEFAULT_BAN_SEC}`);
-        },
-      },
-      {
-        label: `Mute ${DEFAULT_MUTE_SEC}с`,
-        className: "chat-context-admin",
-        onClick: () => {
-          if (pid) sendCmd(`/mute ${pid} ${DEFAULT_MUTE_SEC}`);
-        },
-      },
-      {
-        label: p && p.lkUid ? `ЛК · ${p.lkUid}` : "ЛК / статистика",
-        className: "chat-context-admin",
-        onClick: () => openPlayerLk(p, nick),
-      },
-      {
-        label: "Kill",
-        className: "chat-context-admin danger",
-        onClick: () => {
-          if (pid) sendCmd(`/kill ${pid}`);
-        },
-      },
-      {
-        label: "TP ко мне",
-        className: "chat-context-admin",
-        onClick: () => {
-          if (!pid) return;
-          fillTpFromMe(true);
-          sendCmd(`/tp ${pid} ${val("aaTpX", 0)} ${val("aaTpY", 0)}`);
-        },
-      },
-      {
-        label: "Выбрать в панели",
-        className: "chat-context-admin",
-        onClick: () => {
-          if (pid) selectInPanel(pid);
-        },
-      },
-    ];
-    if (p && Number.isFinite(p.mx) && Number.isFinite(p.my)) {
-      items.splice(1, 0, {
+    const label = state.role === "jmod" ? "JMod" : "Admin";
+    const items = [{ label: label, className: "chat-context-sep", onClick: () => {} }];
+
+    if (hasCap(CAP.SEE_FULL) && p && Number.isFinite(p.mx) && Number.isFinite(p.my)) {
+      items.push({
         label: `xy ${p.mx | 0},${p.my | 0} · ${p.score || 0}`,
         className: "chat-context-pid",
         onClick: () => {
@@ -13059,13 +13008,60 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
         },
       });
     }
+    if (hasCap(CAP.BAN) && pid) {
+      items.push({
+        label: `Kick #${pid}`,
+        className: "chat-context-admin",
+        onClick: () => sendCmd(`/kick ${pid}`),
+      });
+      items.push({
+        label: `Ban ${DEFAULT_BAN_SEC}с`,
+        className: "chat-context-admin danger",
+        onClick: () => sendCmd(`/ban ${pid} ${DEFAULT_BAN_SEC}`),
+      });
+    }
+    if (hasCap(CAP.MUTE) && pid) {
+      items.push({
+        label: `Mute ${DEFAULT_MUTE_SEC}с`,
+        className: "chat-context-admin",
+        onClick: () => sendCmd(`/mute ${pid} ${DEFAULT_MUTE_SEC}`),
+      });
+    }
+    items.push({
+      label: p && p.lkUid ? `ЛК · ${p.lkUid}` : "ЛК / статистика",
+      className: "chat-context-admin",
+      onClick: () => openPlayerLk(p, nick),
+    });
+    if (hasCap(CAP.KILL) && pid) {
+      items.push({
+        label: "Kill",
+        className: "chat-context-admin danger",
+        onClick: () => sendCmd(`/kill ${pid}`),
+      });
+    }
+    if (hasCap(CAP.TP) && pid) {
+      items.push({
+        label: "TP ко мне",
+        className: "chat-context-admin",
+        onClick: () => {
+          fillTpFromMe(true);
+          sendCmd(`/tp ${pid} ${val("aaTpX", 0)} ${val("aaTpY", 0)}`);
+        },
+      });
+    }
+    if (pid) {
+      items.push({
+        label: "Выбрать в панели",
+        className: "chat-context-admin",
+        onClick: () => selectInPanel(pid),
+      });
+    }
     return items;
   }
 
   function appendTargetMenuItems(items, target) {
-    if (!isRootLive() || !Array.isArray(items)) return items;
-    const extra = targetMenuItems(target || {});
-    extra.forEach((it) => items.push(it));
+    if (!isStaffLive() || !Array.isArray(items)) return items;
+    targetMenuItems(target || {}).forEach((it) => items.push(it));
     return items;
   }
 
@@ -13080,7 +13076,7 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 
   function hitFromEvent(e) {
     const S = state.S;
-    if (!S || !isRootLive()) return null;
+    if (!S || !isStaffLive()) return null;
     worldFromEvent(S, e);
     return pickPlayerCell(S, S.X, S.Y);
   }
@@ -13127,27 +13123,22 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
     state.attached = true;
     buildUi();
     bindCanvasMenus();
-    syncStaffFromNick();
 
     if (state.timer) clearInterval(state.timer);
     let tick = 0;
     state.timer = setInterval(() => {
       bindCanvasMenus();
-      syncStaffFromNick();
       if (state.el && state.el.toggle.style.display !== "none") positionNearLeaderboard();
       if (!api.wsIsOpen || !api.wsIsOpen()) {
-        state.lastCellNick = "";
+        if (state.capsReady) hideStaffUi();
         return;
       }
-      if (!state.role) return;
       tick++;
-      if (state.open || tick % 4 === 0) requestPanel();
+      // Always probe panel — server only answers if role is staff; that unlocks UI via caps.
+      if (state.open || tick % 4 === 0 || !state.capsReady) requestPanel();
     }, REFRESH_MS);
 
-    setTimeout(() => {
-      syncStaffFromNick();
-      if (state.role) requestPanel();
-    }, 800);
+    setTimeout(() => requestPanel(), 800);
   }
 
   function tryAutoAttach() {
@@ -13167,14 +13158,14 @@ window.renderDeathBanner = window.renderDeathBanner || function () {};
 
   global.AgarAdmin = {
     OPCODE,
-    ADMIN_NICK,
+    CAP,
     attach,
     onAdminPacket,
     onAdminData,
     tryAutoAttach,
     requestPanel,
     setOpen,
-    isRootLive,
+    isStaffLive,
     appendTargetMenuItems,
     targetMenuItems,
   };
